@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
+  <defs>
+    <linearGradient id="mint" x1="66" y1="80" x2="103" y2="190" gradientUnits="userSpaceOnUse"><stop stop-color="#7CE6D4"/><stop offset="1" stop-color="#39B9AA"/></linearGradient>
+    <linearGradient id="violet" x1="116" y1="58" x2="151" y2="190" gradientUnits="userSpaceOnUse"><stop stop-color="#C1B4FF"/><stop offset="1" stop-color="#8273EF"/></linearGradient>
+    <linearGradient id="amber" x1="165" y1="104" x2="200" y2="190" gradientUnits="userSpaceOnUse"><stop stop-color="#FFD09B"/><stop offset="1" stop-color="#F39B50"/></linearGradient>
+    <linearGradient id="bg" x1="42" y1="24" x2="216" y2="236" gradientUnits="userSpaceOnUse"><stop stop-color="#202C43"/><stop offset="1" stop-color="#101727"/></linearGradient>
+    <filter id="shadow" x="45" y="44" width="166" height="177" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feGaussianBlur stdDeviation="8"/></filter>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="67" fill="url(#bg)"/>
+  <rect x="59" y="66" width="44" height="128" rx="22" fill="#46D2C0" opacity=".23" filter="url(#shadow)"/>
+  <rect x="106" y="46" width="44" height="148" rx="22" fill="#9989FF" opacity=".24" filter="url(#shadow)"/>
+  <rect x="153" y="91" width="44" height="103" rx="22" fill="#FFB26B" opacity=".23" filter="url(#shadow)"/>
+  <rect x="58" y="65" width="43" height="129" rx="21.5" fill="url(#mint)"/>
+  <rect x="106.5" y="45" width="43" height="149" rx="21.5" fill="url(#violet)"/>
+  <rect x="155" y="90" width="43" height="104" rx="21.5" fill="url(#amber)"/>
+  <path d="M69 83v16M117 65v19M166 109v14" stroke="white" stroke-opacity=".66" stroke-width="5" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,61 @@
+{
+  "name": "tri-core-browser",
+  "version": "1.0.0",
+  "description": "A focused desktop browser workspace with three independent web panes.",
+  "author": "Tri-Core Browser contributors",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "preview": "vite preview --host 0.0.0.0",
+    "build": "vite build",
+    "test": "node --test",
+    "desktop": "npm run build && electron .",
+    "package:win": "npm run build && electron-builder --win portable --x64",
+    "package:win:installer": "npm run build && electron-builder --win nsis --x64"
+  },
+  "devDependencies": {
+    "@fontsource-variable/dm-sans": "^5.3.0",
+    "@fontsource-variable/manrope": "^5.3.0",
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3",
+    "vite": "^8.3.4"
+  },
+  "build": {
+    "appId": "com.tricorebrowser.desktop",
+    "productName": "Tri-Core Browser",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "icon": "assets/tricore.ico",
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "portable": {
+      "artifactName": "TriCoreBrowser.exe"
+    },
+    "nsis": {
+      "artifactName": "TriCoreBrowser-${version}-win-${arch}-setup.exe",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}

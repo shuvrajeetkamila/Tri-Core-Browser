@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f4f6fa" />
+    <meta name="description" content="Browse, compare, and cross-check in three independent browser panes." />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'self'; frame-src 'none'" />
+    <title>Tri-Core Browser</title>
+    <link rel="icon" type="image/svg+xml" href="/assets/tricore.svg" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#top" aria-label="Tri-Core Browser home">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 40 40" fill="none">
+              <rect x="5" y="5" width="30" height="30" rx="10" fill="#11192B" />
+              <rect x="11" y="14" width="5" height="13" rx="2.5" fill="#58D7CA" />
+              <rect x="18" y="10" width="5" height="17" rx="2.5" fill="#9A8CFF" />
+              <rect x="25" y="17" width="5" height="10" rx="2.5" fill="#FFB66D" />
+            </svg>
+          </span>
+          <span class="brand-name">TRI<span>CORE</span><small>BROWSER</small></span>
+        </a>
+
+        <div class="workspace-label" aria-label="Current workspace">
+          <span class="workspace-dot" aria-hidden="true"></span>
+          <span class="workspace-label-copy"><span class="eyebrow">WORKSPACE</span><strong>Research desk</strong></span>
+          <span class="workspace-chevron" aria-hidden="true">⌄</span>
+        </div>
+
+        <div class="top-actions">
+          <button class="top-action sync-action" id="sync-toggle" type="button" aria-pressed="false" title="When on, a submitted address opens in all three cores">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 6.5h9.2l-2-2M16 13.5H6.8l2 2M13.2 4.5l2.8 2-2.8 2M6.8 11.5l-2.8 2 2.8 2" /></svg>
+            <span>Sync navigation</span><span class="toggle-pill" id="sync-status">OFF</span>
+          </button>
+          <span class="top-divider" aria-hidden="true"></span>
+          <button class="icon-button top-icon" id="reload-all" type="button" aria-label="Reload all three cores" title="Reload all cores">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16.1 8a6.2 6.2 0 0 0-10.5-2L4 7.7M3.9 12a6.2 6.2 0 0 0 10.5 2l1.6-1.7M4 4.9v2.8h2.8M16 15.1v-2.8h-2.8" /></svg>
+          </button>
+          <button class="icon-button top-icon" id="focus-toggle" type="button" aria-label="Focus the active core" title="Focus active core">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 3.5H4.5v3M13 3.5h2.5v3M7 16.5H4.5v-3M13 16.5h2.5v-3M7.5 7.5h5v5h-5z" /></svg>
+          </button>
+          <span class="app-version">v1.0</span>
+        </div>
+      </header>
+
+      <main id="top" class="main-content">
+        <section class="intro-row" aria-labelledby="page-title">
+          <div class="intro-copy">
+            <div class="section-kicker"><span></span>THINK IN PARALLEL</div>
+            <h1 id="page-title">One question.<br class="mobile-break" /> <span>Three perspectives.</span></h1>
+            <p>Browse, compare, and cross-check without jumping between tabs.</p>
+          </div>
+          <div class="intro-status">
+            <span class="status-orbit" aria-hidden="true"><i></i><i></i><i></i></span>
+            <div><strong>3 independent cores</strong><small>Separate pages. One focused workspace.</small></div>
+          </div>
+        </section>
+
+        <section class="browser-grid" id="browser-grid" aria-label="Three browser cores">
+          <article class="browser-pane pane-discover is-active" data-pane="0" aria-labelledby="pane-title-0">
+            <header class="pane-heading">
+              <span class="pane-symbol" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.2"/><path d="m15.4 15.4 4.1 4.1M10.8 7.8v6M7.8 10.8h6"/></svg></span>
+              <div class="pane-heading-copy"><div class="pane-title-row"><span class="pane-number">CORE 01</span><span class="pane-live-dot" aria-hidden="true"></span><span class="pane-state" data-state>READY</span></div><h2 id="pane-title-0">Discover</h2></div>
+              <button class="pane-focus icon-button" type="button" data-focus-pane="0" aria-label="Focus Discover core" title="Focus this core"><svg viewBox="0 0 20 20"><path d="M7 3.5H4.5v3M13 3.5h2.5v3M7 16.5H4.5v-3M13 16.5h2.5v-3M7.5 7.5h5v5h-5z"/></svg></button>
+            </header>
+            <div class="pane-toolbar">
+              <button class="nav-button" type="button" data-action="back" data-slot="0" aria-label="Back" title="Back" disabled><svg viewBox="0 0 20 20"><path d="m12.5 4.5-5.5 5.5 5.5 5.5"/></svg></button>
+              <button class="nav-button" type="button" data-action="forward" data-slot="0" aria-label="Forward" title="Forward" disabled><svg viewBox="0 0 20 20"><path d="m7.5 4.5 5.5 5.5-5.5 5.5"/></svg></button>
+              <button class="nav-button" type="button" data-action="reload" data-slot="0" aria-label="Reload" title="Reload"><svg viewBox="0 0 20 20"><path d="M16 8a6 6 0 0 0-10.2-2L4 7.8M4 4.8v3h3M4 12a6 6 0 0 0 10.2 2l1.8-1.8M16 15.2v-3h-3"/></svg></button>
+              <form class="address-form" data-slot="0" autocomplete="off">
+                <svg class="address-lock" viewBox="0 0 20 20" aria-hidden="true"><rect x="4.5" y="8.5" width="11" height="8" rx="2"/><path d="M7 8.5V6a3 3 0 0 1 6 0v2.5M10 11.5v2"/></svg>
+                <input class="address-input" data-address="0" aria-label="Address or search for Discover core" spellcheck="false" placeholder="Search or enter a web address" />
+                <button class="address-submit" type="submit" aria-label="Go"><svg viewBox="0 0 20 20"><path d="M4 10h11M10.5 5.5 15 10l-4.5 4.5"/></svg></button>
+              </form>
+            </div>
+            <div class="pane-viewport" data-viewport="0">
+              <div class="preview-page" data-preview="0">
+                <div class="preview-topline"><span class="preview-mark"><i></i><i></i><i></i></span><span>CORE 01 · DISCOVER</span><span class="preview-mode">UI PREVIEW</span></div>
+                <div class="preview-center">
+                  <div class="preview-illustration illustration-mint" aria-hidden="true"><span class="spark spark-one"></span><span class="spark spark-two"></span><span class="orbit orbit-one"></span><span class="orbit orbit-two"></span><span class="glass"><i></i></span></div>
+                  <span class="preview-caption">A SPACE TO START</span>
+                  <h3>Follow the first lead.</h3>
+                  <p>Start broad here. Keep your other cores ready for a second opinion and a source check.</p>
+                  <button class="suggestion-chip" type="button" data-query="latest design research and trends"><svg viewBox="0 0 20 20"><path d="M8.5 3.5H4v12h12v-4.5M10 10l6-6M11.5 4H16v4.5"/></svg>Try a search <span>↗</span></button>
+                </div>
+                <div class="preview-footnote"><span class="footnote-dot"></span>Independent session <span class="footnote-separator">·</span> Core 01</div>
+              </div>
+              <div class="preview-notice" aria-live="polite" hidden></div>
+            </div>
+            <footer class="pane-footer"><span><i class="footer-secure-dot"></i><span data-page-title>Ready for a new page</span></span><span class="footer-index">01 <b>/</b> 03</span></footer>
+          </article>
+
+          <article class="browser-pane pane-compare" data-pane="1" aria-labelledby="pane-title-1">
+            <header class="pane-heading">
+              <span class="pane-symbol" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6.5h6v11H4zM14 6.5h6v11h-6zM7 9.5h.01M17 9.5h.01M7 13.5h.01M17 13.5h.01"/></svg></span>
+              <div class="pane-heading-copy"><div class="pane-title-row"><span class="pane-number">CORE 02</span><span class="pane-live-dot" aria-hidden="true"></span><span class="pane-state" data-state>READY</span></div><h2 id="pane-title-1">Compare</h2></div>
+              <button class="pane-focus icon-button" type="button" data-focus-pane="1" aria-label="Focus Compare core" title="Focus this core"><svg viewBox="0 0 20 20"><path d="M7 3.5H4.5v3M13 3.5h2.5v3M7 16.5H4.5v-3M13 16.5h2.5v-3M7.5 7.5h5v5h-5z"/></svg></button>
+            </header>
+            <div class="pane-toolbar">
+              <button class="nav-button" type="button" data-action="back" data-slot="1" aria-label="Back" title="Back" disabled><svg viewBox="0 0 20 20"><path d="m12.5 4.5-5.5 5.5 5.5 5.5"/></svg></button>
+              <button class="nav-button" type="button" data-action="forward" data-slot="1" aria-label="Forward" title="Forward" disabled><svg viewBox="0 0 20 20"><path d="m7.5 4.5 5.5 5.5-5.5 5.5"/></svg></button>
+              <button class="nav-button" type="button" data-action="reload" data-slot="1" aria-label="Reload" title="Reload"><svg viewBox="0 0 20 20"><path d="M16 8a6 6 0 0 0-10.2-2L4 7.8M4 4.8v3h3M4 12a6 6 0 0 0 10.2 2l1.8-1.8M16 15.2v-3h-3"/></svg></button>
+              <form class="address-form" data-slot="1" autocomplete="off">
+                <svg class="address-lock" viewBox="0 0 20 20" aria-hidden="true"><rect x="4.5" y="8.5" width="11" height="8" rx="2"/><path d="M7 8.5V6a3 3 0 0 1 6 0v2.5M10 11.5v2"/></svg>
+                <input class="address-input" data-address="1" aria-label="Address or search for Compare core" spellcheck="false" placeholder="Search or enter a web address" />
+                <button class="address-submit" type="submit" aria-label="Go"><svg viewBox="0 0 20 20"><path d="M4 10h11M10.5 5.5 15 10l-4.5 4.5"/></svg></button>
+              </form>
+            </div>
+            <div class="pane-viewport" data-viewport="1">
+              <div class="preview-page" data-preview="1">
+                <div class="preview-topline"><span class="preview-mark"><i></i><i></i><i></i></span><span>CORE 02 · COMPARE</span><span class="preview-mode">UI PREVIEW</span></div>
+                <div class="preview-center">
+                  <div class="preview-illustration illustration-violet" aria-hidden="true"><span class="compare-card card-back"></span><span class="compare-card card-front"><i></i><i></i><i></i><b></b></span><span class="compare-plus">+</span></div>
+                  <span class="preview-caption">A SECOND PERSPECTIVE</span>
+                  <h3>Put ideas side by side.</h3>
+                  <p>Open a different source or search the same question from another angle.</p>
+                  <button class="suggestion-chip" type="button" data-query="compare independent perspectives"><svg viewBox="0 0 20 20"><path d="M8.5 3.5H4v12h12v-4.5M10 10l6-6M11.5 4H16v4.5"/></svg>Try a search <span>↗</span></button>
+                </div>
+                <div class="preview-footnote"><span class="footnote-dot"></span>Independent session <span class="footnote-separator">·</span> Core 02</div>
+              </div>
+              <div class="preview-notice" aria-live="polite" hidden></div>
+            </div>
+            <footer class="pane-footer"><span><i class="footer-secure-dot"></i><span data-page-title>Ready for a new page</span></span><span class="footer-index">02 <b>/</b> 03</span></footer>
+          </article>
+
+          <article class="browser-pane pane-verify" data-pane="2" aria-labelledby="pane-title-2">
+            <header class="pane-heading">
+              <span class="pane-symbol" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3.5 19 6v5.1c0 4.5-2.9 7.7-7 9.4-4.1-1.7-7-4.9-7-9.4V6l7-2.5Z"/><path d="m9 12 2 2 4-4"/></svg></span>
+              <div class="pane-heading-copy"><div class="pane-title-row"><span class="pane-number">CORE 03</span><span class="pane-live-dot" aria-hidden="true"></span><span class="pane-state" data-state>READY</span></div><h2 id="pane-title-2">Verify</h2></div>
+              <button class="pane-focus icon-button" type="button" data-focus-pane="2" aria-label="Focus Verify core" title="Focus this core"><svg viewBox="0 0 20 20"><path d="M7 3.5H4.5v3M13 3.5h2.5v3M7 16.5H4.5v-3M13 16.5h2.5v-3M7.5 7.5h5v5h-5z"/></svg></button>
+            </header>
+            <div class="pane-toolbar">
+              <button class="nav-button" type="button" data-action="back" data-slot="2" aria-label="Back" title="Back" disabled><svg viewBox="0 0 20 20"><path d="m12.5 4.5-5.5 5.5 5.5 5.5"/></svg></button>
+              <button class="nav-button" type="button" data-action="forward" data-slot="2" aria-label="Forward" title="Forward" disabled><svg viewBox="0 0 20 20"><path d="m7.5 4.5 5.5 5.5-5.5 5.5"/></svg></button>
+              <button class="nav-button" type="button" data-action="reload" data-slot="2" aria-label="Reload" title="Reload"><svg viewBox="0 0 20 20"><path d="M16 8a6 6 0 0 0-10.2-2L4 7.8M4 4.8v3h3M4 12a6 6 0 0 0 10.2 2l1.8-1.8M16 15.2v-3h-3"/></svg></button>
+              <form class="address-form" data-slot="2" autocomplete="off">
+                <svg class="address-lock" viewBox="0 0 20 20" aria-hidden="true"><rect x="4.5" y="8.5" width="11" height="8" rx="2"/><path d="M7 8.5V6a3 3 0 0 1 6 0v2.5M10 11.5v2"/></svg>
+                <input class="address-input" data-address="2" aria-label="Address or search for Verify core" spellcheck="false" placeholder="Search or enter a web address" />
+                <button class="address-submit" type="submit" aria-label="Go"><svg viewBox="0 0 20 20"><path d="M4 10h11M10.5 5.5 15 10l-4.5 4.5"/></svg></button>
+              </form>
+            </div>
+            <div class="pane-viewport" data-viewport="2">
+              <div class="preview-page" data-preview="2">
+                <div class="preview-topline"><span class="preview-mark"><i></i><i></i><i></i></span><span>CORE 03 · VERIFY</span><span class="preview-mode">UI PREVIEW</span></div>
+                <div class="preview-center">
+                  <div class="preview-illustration illustration-amber" aria-hidden="true"><span class="verify-ring"></span><span class="verify-check"><svg viewBox="0 0 28 28"><path d="m6 14 5 5L22 8"/></svg></span><span class="verify-ray ray-one"></span><span class="verify-ray ray-two"></span></div>
+                  <span class="preview-caption">A MOMENT TO CHECK</span>
+                  <h3>Trust, then verify.</h3>
+                  <p>Keep a primary source close by and check the details before you draw a conclusion.</p>
+                  <button class="suggestion-chip" type="button" data-query="verify primary sources and facts"><svg viewBox="0 0 20 20"><path d="M8.5 3.5H4v12h12v-4.5M10 10l6-6M11.5 4H16v4.5"/></svg>Try a search <span>↗</span></button>
+                </div>
+                <div class="preview-footnote"><span class="footnote-dot"></span>Independent session <span class="footnote-separator">·</span> Core 03</div>
+              </div>
+              <div class="preview-notice" aria-live="polite" hidden></div>
+            </div>
+            <footer class="pane-footer"><span><i class="footer-secure-dot"></i><span data-page-title>Ready for a new page</span></span><span class="footer-index">03 <b>/</b> 03</span></footer>
+          </article>
+        </section>
+
+        <footer class="workspace-footer">
+          <span class="keyboard-tip"><kbd>Ctrl</kbd><kbd>L</kbd><span>focus address</span></span>
+          <span class="footer-separator" aria-hidden="true"></span>
+          <span class="keyboard-tip"><kbd>Ctrl</kbd><kbd>1</kbd><span>switch core</span></span>
+          <span class="preview-explainer"><span class="preview-explainer-dot"></span>Desktop build opens live pages in each core</span>
+        </footer>
+      </main>
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
