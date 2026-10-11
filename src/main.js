@@ -570,7 +570,7 @@ function renderFsrTestResult(result) {
     ? `EASU ${Number(frame.easuGpuTimeMs).toFixed(3)} ms + RCAS ${Number(frame.rcasGpuTimeMs).toFixed(3)} ms GPU`
     : 'native GPU timestamps unavailable';
   document.querySelector('#fsr-test-metrics-detail').textContent = `${frame.inputWidth}×${frame.inputHeight} → ${frame.outputWidth}×${frame.outputHeight} · ${adapterType} · capturePage ${frame.capturePageMs.toFixed(2)} ms · native helper ${frame.nativeProcessMs.toFixed(2)} ms · ${gpuTimes} · batch wall ${result.totalRoundTripMs.toFixed(2)} ms. Upscaling changes image dimensions; no performance gain is established.`;
-  document.querySelector('#fsr-test-capture-paths').textContent = `Input PNG: ${frame.inputPath} · Processed PNG: ${frame.outputPath} · Native report: ${frame.reportPath} · Input SHA-256: ${frame.inputSha256}`;
+  document.querySelector('#fsr-test-capture-paths').textContent = `Input PNG: ${frame.inputPath} · Processed PNG: ${frame.outputPath} · Bilinear reference PNG: ${frame.referencePath} · Native report: ${frame.reportPath} · Input SHA-256: ${frame.inputSha256}`;
   setFsrTestStatus('FSR1 passed for the controlled WebGL2 capture. The original browser tab was not replaced or modified; regular pages still render in Chromium.', 'pass');
 }
 

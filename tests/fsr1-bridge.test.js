@@ -1,11 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const {
   EXPECTED_INPUT_SOURCE,
   FSR_TECHNOLOGY,
+  buildBilinearReferencePath,
   buildNativeFsrArguments,
   normalizeCaptureRequest,
   validateCaptureContext,
@@ -80,6 +82,20 @@ test('native helper uses a fixed argument vector and never invokes a command she
   }), /cannot be combined/);
 });
 
+test('each browser output frame maps to its own bilinear-reference capture path', () => {
+  const frameOnePath = path.join('captures', 'frame-001-fsr1-easu-rcas.png');
+  const frameTwoPath = path.join('captures', 'frame-002-fsr1-easu-rcas.png');
+  assert.equal(
+    buildBilinearReferencePath(frameOnePath),
+    path.join('captures', 'frame-001-fsr1-easu-rcas-bilinear-reference.png'),
+  );
+  assert.notEqual(
+    buildBilinearReferencePath(frameOnePath),
+    buildBilinearReferencePath(frameTwoPath),
+  );
+  assert.throws(() => buildBilinearReferencePath(''), /output path is required/);
+});
+
 test('processed frame must be reported as a real capturePage image entering FSR and returning at 2×', () => {
   const report = {
     status: 'PASS',
@@ -94,9 +110,14 @@ test('processed frame must be reported as a real capturePage image entering FSR 
     fsr1RequiredFeaturesSupported: true,
     input: { width: 480, height: 600 },
     output: { width: 960, height: 1200 },
+    bilinearReferencePath: '/captures/frame-001-bilinear-reference.png',
     checksum: 123456,
   };
-  assert.deepEqual(validateNativeFsrReport(report, { width: 480, height: 600 }), {
+  assert.deepEqual(validateNativeFsrReport(report, {
+    width: 480,
+    height: 600,
+    referencePath: '/captures/frame-001-bilinear-reference.png',
+  }), {
     ok: true, inputWidth: 480, inputHeight: 600, outputWidth: 960, outputHeight: 1200,
   });
   assert.equal(validateNativeFsrReport({ ...report, inputSource: 'synthetic native texture' }).ok, false);
@@ -104,4 +125,7 @@ test('processed frame must be reported as a real capturePage image entering FSR 
   assert.equal(validateNativeFsrReport({ ...report, processedFrames: 0 }).ok, false);
   assert.equal(validateNativeFsrReport({ ...report, output: { width: 481, height: 1200 } }).ok, false);
   assert.equal(validateNativeFsrReport({ ...report, fsr1RequiredFeaturesSupported: false }).ok, false);
+  assert.equal(validateNativeFsrReport({ ...report, bilinearReferencePath: '/captures/wrong-frame-reference.png' }, {
+    referencePath: '/captures/frame-001-bilinear-reference.png',
+  }).ok, false);
 });

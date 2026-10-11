@@ -216,12 +216,9 @@ DeviceSupport QueryDeviceSupport(ID3D12Device* device) {
         support.texture2d = (format.Support1 & D3D12_FORMAT_SUPPORT1_TEXTURE2D) != 0;
         support.shaderSample = (format.Support1 & D3D12_FORMAT_SUPPORT1_SHADER_SAMPLE) != 0;
         support.shaderLoad = (format.Support1 & D3D12_FORMAT_SUPPORT1_SHADER_LOAD) != 0;
-        support.unorderedAccess = (format.Support1 & D3D12_FORMAT_SUPPORT1_UNORDERED_ACCESS) != 0;
     }
-    D3D12_FEATURE_DATA_FORMAT_SUPPORT2 format2{};
-    format2.InFormat = kImageFormat;
-    const HRESULT format2Result = device->CheckFeatureSupport(D3D12_FEATURE_FORMAT_SUPPORT2, &format2, sizeof(format2));
-    if (SUCCEEDED(format2Result)) support.typedUavStore = (format2.OutFormatSupport2 & D3D12_FORMAT_SUPPORT2_UAV_TYPED_STORE) != 0;
+    support.unorderedAccess = (format.Support1 & D3D12_FORMAT_SUPPORT1_TYPED_UNORDERED_ACCESS_VIEW) != 0;
+    support.typedUavStore = (format.Support2 & D3D12_FORMAT_SUPPORT2_UAV_TYPED_STORE) != 0;
 
     D3D12_FEATURE_DATA_SHADER_MODEL shaderModel{};
     shaderModel.HighestShaderModel = D3D_SHADER_MODEL_6_0;
@@ -229,11 +226,10 @@ DeviceSupport QueryDeviceSupport(ID3D12Device* device) {
     if (SUCCEEDED(shaderResult)) {
         if (shaderModel.HighestShaderModel >= D3D_SHADER_MODEL_6_0) support.shaderModel = "6_0+";
         else if (shaderModel.HighestShaderModel >= D3D_SHADER_MODEL_5_1) support.shaderModel = "5_1";
-        else if (shaderModel.HighestShaderModel >= D3D_SHADER_MODEL_5_0) support.shaderModel = "5_0";
-        else support.shaderModel = "below_5_0";
+        else support.shaderModel = "below_5_1";
     } else {
-        // D3D12 feature-level 11_0 guarantees the SM5 compute language used by the pinned AMD shaders.
-        support.shaderModel = "5_0 (D3D12 feature-level 11_0 baseline; query unavailable)";
+        // D3D12 feature-level 11_0 guarantees the SM5.1 compute language used by the pinned AMD shaders.
+        support.shaderModel = "5_1 (D3D12 feature-level 11_0 baseline; query unavailable)";
     }
     support.supportsFsr = support.texture2d && support.shaderSample && support.shaderLoad &&
         support.unorderedAccess && support.typedUavStore && support.shaderModel.find("below") != 0;
@@ -810,7 +806,8 @@ void Run(const Options& options) {
         inputPath = options.inputPng;
         outputPath = options.outputPng;
         reportPath = options.reportJson;
-        referencePath = options.outputPng.parent_path() / "bilinear-reference.png";
+        referencePath = options.outputPng.parent_path() /
+            (options.outputPng.stem().wstring() + L"-bilinear-reference.png");
         frame = ReadPng(inputPath);
     } else {
         fs::create_directories(options.outputDirectory);

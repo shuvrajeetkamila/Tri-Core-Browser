@@ -34,13 +34,13 @@ The official NVIDIA Streamline repository and DLSS programming guide were review
 
 Retain all three cores, navigation, tabs, profile, bookmarks/history, downloads, default-deny site permissions, HTTPS validation, tests, WASM diagnostic, and collapsible performance panel. Remote pages remain sandboxed with context isolation, no Node integration, and no unrestricted native-code API. No driver install, TLS bypass, sandbox weakening, or external-process graphics-memory access is permitted.
 
-### Stage 1 — Honest capability controller and accessible persistent panel (**implemented; Linux verification passed, Windows graphics validation pending**)
+### Stage 1 — Honest capability controller and accessible persistent panel (**implemented; local verification passed 2026-10-11**)
 
 - Preserve visible/selectable DLSS, FSR, WASM, hybrid-policy, and standard modes in auto/manual settings.
 - Keep detection, D3D12 feature compatibility, helper initialization, active processing, processed frame counts, failure and unsupported states distinct. Vendor identity does not imply support.
 - Auto priority is DLSS → FSR → WASM when an integration is actually compatible and initialized. The FSR screenshot helper is manual-only and not eligible to replace ordinary page rendering; WASM stays runtime-only, not image upscaling.
 - Unsupported/failed native requests keep standard Chromium active. The semantic keyboard-operable performance disclosure persists collapsed state; collapse only affects UI/layout, not browser processing.
-- Current Linux verification passed **34/34** Node tests, the Vite 8.3.4 production build, JavaScript syntax checks across `electron/`, `src/`, `tests/`, and `scripts/`, YAML parsing for all three GitHub workflows, and staged-diff whitespace checks. This validates source/build behavior only; Windows native compilation and the packaged WARP graphics path remain pending.
+- Current local tests pass **35/35**, the renderer builds, and syntax/workflow checks pass; native Windows compilation and packaged WARP smoke remain pending.
 
 ### Stage 2 — Native FSR1 D3D12 harness (**source implemented; Windows build/WARP rerun pending**)
 
@@ -54,7 +54,7 @@ Retain all three cores, navigation, tabs, profile, bookmarks/history, downloads,
 - Bundle a reproducible animated WebGL2 scene with changing visual frames, frame counter, no network assets, and responsive resolution.
 - Capture only the exact bundled scene while its `WebContentsView` is active, visible and not loading. Revalidate context around capture/native processing, bound dimensions/bytes, invoke the helper with fixed `execFile` arguments (no shell), and retain standard rendering as fallback.
 - Return input/output PNG previews; record hashes, capture/helper/native/GPU timings when available, dimensions/resolutions and real frame count. This is not continuous/zero-copy processing.
-- The mandatory packaged Windows smoke is designed to vary view size and require three unique `capturePage()` PNG frames at three distinct resolutions, process each with FSR1 on WARP, validate output reports/PNG signatures, and retain the evidence in the workflow artifact/portable ZIP. **This gate has not yet run on the current source.**
+- The mandatory packaged Windows smoke is designed to vary view size and require three unique `capturePage()` PNG frames at three distinct resolutions, process each with FSR1 on WARP, validate per-frame reports/output/reference PNGs and unique bilinear-reference paths, and retain the evidence in the workflow artifact/portable ZIP. **This gate has not yet run on the current source.**
 
 ### Stage 4 — DLSS / Streamline (**blocked**)
 
@@ -75,7 +75,7 @@ On a real Windows device, run `--list-adapters`, then `--hardware --adapter-inde
 | Chromium WebAssembly | Tested / working runtime diagnostic | Real compile/instantiate and `19 + 23 = 42` test; never upscaling. |
 | Standard Chromium browsing and safe fallback | Tested / working | Browser remains the effective renderer for ordinary pages and unsupported/failed requests. |
 | Bundled WebGL2 scene → `capturePage()` PNG → FSR1 preview | Implemented in source; current Windows test pending | Require Windows packaged three-frame/three-resolution WARP smoke and inspect uploaded captures/reports. |
-| Native synthetic-pattern FSR1 | Component regression only | Historical earlier-commit WARP evidence exists; it does not validate current PNG/browser path. Re-run current workflow. |
+| Native synthetic-pattern FSR1 | Component regression only | WARP passed on earlier commit `7c4920d34003ad493a9399d81d42ff2607f3fbd1` ([run 38143083177](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38143083177)); it does not validate this revision's PNG/browser path. Re-run current workflow. |
 | Physical AMD or other GPU | Not run | Requires real hardware, selected adapter and report/capture review. |
 | Arbitrary webpages/games, WebGL/WebGPU, video/DRM/cloud/external apps | Unsupported / architecture-blocked | No supported page-resource/compositor bridge. |
 | NVIDIA DLSS / Frame Generation | Not implemented / not tested | No authorized runtime, controlled native renderer or NVIDIA hardware validation. |
@@ -84,12 +84,12 @@ On a real Windows device, run `--list-adapters`, then `--hardware --adapter-inde
 
 | Check | Current status |
 | --- | --- |
-| `npm test` | **PASS — 34/34** on the current working-tree source. |
-| `npm run build` | **PASS — Vite 8.3.4** production renderer build. |
-| JavaScript syntax checks | **PASS** for all JavaScript/CommonJS files in `electron/`, `src/`, `tests/`, and `scripts/`. |
-| Workflow YAML parse | **PASS** for all three `.github/workflows/*.yml` files. |
-| `git diff --cached --check` | **PASS** after whitespace cleanup; verify again after any edits. |
-| `npm audit --audit-level=high` | **PASS threshold** — 8 moderate findings, no high/critical findings; see dependency audit output. |
+| `npm test` | **PASS — 35/35** after the latest source edits. |
+| `npm run build` | **PASS** after the latest renderer edits. |
+| JavaScript syntax checks | **PASS** for main, preload, bridge, renderer, preferences, and graphics controller. |
+| GitHub workflow / package JSON syntax | **PASS** — `js-yaml` parsed all three workflow files; package JSON parsed. PowerShell script syntax remains unverified on this Linux host. |
+| `git diff --check` | **PASS** after removing trailing Markdown whitespace. |
+| `npm audit --audit-level=high` | **PASS (threshold)** — 8 moderate, 0 high, 0 critical findings; no forced breaking fix. |
 | CMake/MSVC/native helper build | Not available locally; Windows Actions pending. |
 | Packaged Windows `capturePage()` → FSR1 WARP frames | Not run for current source. |
 | Physical GPU/AMD vendor, DLSS, arbitrary-page upscaling | Not run / not implemented as scoped above. |

@@ -17,6 +17,7 @@ const http = require('node:http');
 const { execFile } = require('node:child_process');
 const {
   EXPECTED_INPUT_SOURCE,
+  buildBilinearReferencePath,
   buildNativeFsrArguments,
   normalizeCaptureRequest,
   validateCaptureContext,
@@ -730,6 +731,7 @@ async function processBrowserFsrFramesInternal(payload, { useWarp = false, smoke
       }
       const inputPath = path.join(runDirectory, `frame-${String(index + 1).padStart(3, '0')}-webcontents.png`);
       const outputPath = path.join(runDirectory, `frame-${String(index + 1).padStart(3, '0')}-fsr1-easu-rcas.png`);
+      const referencePath = buildBilinearReferencePath(outputPath);
       const reportPath = path.join(runDirectory, `frame-${String(index + 1).padStart(3, '0')}-report.json`);
       fs.writeFileSync(inputPath, inputBytes, { mode: 0o600 });
       const inputSha256 = crypto.createHash('sha256').update(inputBytes).digest('hex');
@@ -754,7 +756,7 @@ async function processBrowserFsrFramesInternal(payload, { useWarp = false, smoke
       const nativeProcessMs = Number(process.hrtime.bigint() - nativeStarted) / 1e6;
       if (!isFsrJobCurrent(job)) throw new Error('Capture cancelled.');
       const nativeReport = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
-      const validation = validateNativeFsrReport(nativeReport, { width, height });
+      const validation = validateNativeFsrReport(nativeReport, { width, height, referencePath });
       if (!validation.ok) throw new Error(validation.error);
       if (nativeReport.softwareAdapter !== useWarp) throw new Error('The native helper returned an unexpected software/hardware adapter classification.');
 
@@ -763,6 +765,12 @@ async function processBrowserFsrFramesInternal(payload, { useWarp = false, smoke
       const processedSize = processedImage.getSize();
       if (processedSize.width !== validation.outputWidth || processedSize.height !== validation.outputHeight) {
         throw new Error('The processed FSR PNG dimensions do not match the native validation report.');
+      }
+      const referenceImage = nativeImage.createFromPath(referencePath);
+      if (referenceImage.isEmpty()) throw new Error('The CPU bilinear-reference PNG could not be reopened for visual validation.');
+      const referenceSize = referenceImage.getSize();
+      if (referenceSize.width !== validation.outputWidth || referenceSize.height !== validation.outputHeight) {
+        throw new Error('The bilinear-reference PNG dimensions do not match the 2× output dimensions.');
       }
       const outputBytes = fs.readFileSync(outputPath);
       if (!outputBytes.length || outputBytes.length > MAX_FSR_PREVIEW_BYTES) {
@@ -793,6 +801,7 @@ async function processBrowserFsrFramesInternal(payload, { useWarp = false, smoke
         meanAbsoluteDifferenceFromBilinear: nativeReport.meanAbsoluteDifferenceFromBilinear,
         inputPath,
         outputPath,
+        referencePath,
         reportPath,
         nativeReport,
       };
@@ -841,6 +850,7 @@ async function processBrowserFsrFramesInternal(payload, { useWarp = false, smoke
       outputPreview: lastOutputDataUrl,
       inputPath: results[results.length - 1]?.inputPath || '',
       outputPath: results[results.length - 1]?.outputPath || '',
+      referencePath: results[results.length - 1]?.referencePath || '',
       reportPath: results[results.length - 1]?.reportPath || '',
     };
   } catch (error) {
@@ -1143,6 +1153,7 @@ async function runSmokeTest() {
           meanAbsoluteDifferenceFromBilinear: frame.meanAbsoluteDifferenceFromBilinear,
           inputPath: frame.inputPath,
           outputPath: frame.outputPath,
+          referencePath: frame.referencePath,
           reportPath: frame.reportPath,
           nativeReport: frame.nativeReport,
         })),

@@ -1,5 +1,7 @@
 'use strict';
 
+const path = require('node:path');
+
 const MAX_FSR_CAPTURE_FRAMES = 5;
 const MAX_CAPTURE_SLOT = 2;
 const EXPECTED_INPUT_SOURCE = 'Electron WebContents.capturePage() PNG';
@@ -71,6 +73,15 @@ function buildNativeFsrArguments({ inputPath, outputPath, reportPath, adapterInd
   return args;
 }
 
+function buildBilinearReferencePath(outputPath) {
+  if (typeof outputPath !== 'string' || outputPath.length === 0) {
+    throw new TypeError('A processed output path is required to name its bilinear reference.');
+  }
+  const outputName = path.basename(outputPath, path.extname(outputPath));
+  if (!outputName) throw new TypeError('The processed output path must include a file name.');
+  return path.join(path.dirname(outputPath), `${outputName}-bilinear-reference.png`);
+}
+
 function validateNativeFsrReport(report, expectedInput = {}) {
   if (!report || typeof report !== 'object') return { ok: false, error: 'The native FSR helper did not produce a readable JSON report.' };
   if (report.status !== 'PASS' || report.initializationStatus !== 'PASS' || report.processingStatus !== 'PASS') {
@@ -84,6 +95,13 @@ function validateNativeFsrReport(report, expectedInput = {}) {
   }
   if (report.processedFrames !== 1 || typeof report.softwareAdapter !== 'boolean') {
     return { ok: false, error: 'The native report is missing a single-frame count or software/hardware adapter classification.' };
+  }
+  if (typeof report.bilinearReferencePath !== 'string' || !report.bilinearReferencePath) {
+    return { ok: false, error: 'The native report is missing the CPU bilinear-reference capture path.' };
+  }
+  if (expectedInput.referencePath
+      && path.resolve(report.bilinearReferencePath) !== path.resolve(expectedInput.referencePath)) {
+    return { ok: false, error: 'The native report bilinear-reference path does not match this captured frame.' };
   }
   const inputWidth = Number(report.input?.width);
   const inputHeight = Number(report.input?.height);
@@ -105,6 +123,7 @@ module.exports = {
   EXPECTED_INPUT_SOURCE,
   FSR_TECHNOLOGY,
   MAX_FSR_CAPTURE_FRAMES,
+  buildBilinearReferencePath,
   buildNativeFsrArguments,
   normalizeCaptureRequest,
   validateCaptureContext,

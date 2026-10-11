@@ -49,7 +49,7 @@ foreach ($frame in $fsrSummary.frames) {
       -or $frame.nativeReport.softwareAdapter -ne $true -or $frame.nativeReport.processingStatus -ne 'PASS') {
     throw 'A per-frame native report does not validate the capturePage PNG to FSR1 WARP path.'
   }
-  foreach ($imagePath in @($frame.inputPath, $frame.outputPath, $frame.reportPath)) {
+  foreach ($imagePath in @($frame.inputPath, $frame.outputPath, $frame.referencePath, $frame.reportPath)) {
     if (-not (Test-Path $imagePath -PathType Leaf)) { throw "Browser-frame FSR1 evidence is missing: $imagePath" }
   }
 }

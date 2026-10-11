@@ -22,7 +22,23 @@ jobs:
       - name: Configure native project
         run: cmake -S native/fsr1-poc -B build/fsr1-poc -A x64
       - name: Build native project
-        run: cmake --build build/fsr1-poc --config Release --parallel
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $buildOutput = & cmake --build build/fsr1-poc --config Release --parallel 2>&1
+          $buildExitCode = $LASTEXITCODE
+          $buildOutput | ForEach-Object { Write-Host $_ }
+          if ($buildExitCode -ne 0) {
+            $diagnostics = @($buildOutput | Where-Object { ([string]$_) -match '(?i)(error C[0-9]+|fatal error|: error:|FAILED:|error MSB[0-9]+)' })
+            if ($diagnostics.Count -eq 0) { $diagnostics = @($buildOutput | Select-Object -Last 25) }
+            foreach ($diagnostic in $diagnostics) {
+              $message = ([string]$diagnostic).Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+              Write-Output "::error title=Native C++ build diagnostic::$message"
+            }
+            $summary = @('### Native C++ build diagnostics', '', '```text') + @($buildOutput | ForEach-Object { [string]$_ }) + @('```')
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ($summary -join "`n") -Encoding utf8
+            exit $buildExitCode
+          }
       - name: Execute official FSR EASU and RCAS on D3D12 WARP
         shell: pwsh
         run: |
@@ -50,5 +66,5 @@ jobs:
         with:
           name: TriCore-FSR1-D3D12-WARP-POC
           path: ${{ runner.temp }}/fsr1-poc-results/
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30

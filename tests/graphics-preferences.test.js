@@ -51,7 +51,6 @@ test('normalizes invalid saved fields while retaining valid persistent choices',
 
   storage.setItem(GRAPHICS_PREFERENCES_STORAGE_KEY, JSON.stringify({
     selection: 'unexpected',
-    priority: 'unexpected',
     mode: 'unknown-mode',
     panelCollapsed: 'false',
   }));
