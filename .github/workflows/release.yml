@@ -60,15 +60,30 @@ jobs:
           New-Item -ItemType Directory -Path $fsrSmokeOut -Force | Out-Null
           $env:TRICORE_REQUIRE_FSR_BROWSER_SMOKE = 'PASS'
           $env:TRICORE_FSR_SMOKE_OUT = $fsrSmokeOut
+          function Write-SmokeFailureDetail([string]$reason) {
+            $lines = @($reason)
+            if (Test-Path $stdout) { $lines += @(Get-Content $stdout -Tail 12) }
+            if (Test-Path $stderr) { $lines += @(Get-Content $stderr -Tail 12) }
+            $detail = ($lines | Select-Object -Last 20) -join ' | '
+            if ($detail.Length -gt 3500) { $detail = $detail.Substring($detail.Length - 3500) }
+            $escaped = $detail.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error title=Packaged smoke diagnostic::$escaped"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ("Packaged smoke diagnostic:`n`n```text`n$detail`n```") -Encoding utf8
+          }
           $process = Start-Process -FilePath $exe -ArgumentList @('--smoke-test') -NoNewWindow -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
           if (-not $process.WaitForExit(150000)) {
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            $process.WaitForExit()
+            Write-SmokeFailureDetail 'Packaged browser smoke test timed out after 150 seconds.'
             throw 'Packaged browser smoke test timed out after 150 seconds.'
           }
           $process.Refresh()
           if (Test-Path $stdout) { Get-Content $stdout }
           if (Test-Path $stderr) { Get-Content $stderr }
-          if ($process.ExitCode -ne 0) { throw "Packaged browser smoke test exited with $($process.ExitCode)." }
+          if ($process.ExitCode -ne 0) {
+            Write-SmokeFailureDetail "Packaged browser smoke test exited with $($process.ExitCode)."
+            throw "Packaged browser smoke test exited with $($process.ExitCode)."
+          }
           $smokeText = if (Test-Path $stdout) { Get-Content $stdout -Raw } else { '' }
           if (-not $smokeText.Contains('[smoke] Real WebContentsView WebGL2 capture')) { throw 'Packaged smoke log does not contain browser-frame capture-to-FSR evidence.' }
           $summaryPath = Join-Path $fsrSmokeOut 'browser-frame-smoke-summary.json'
