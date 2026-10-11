@@ -2,7 +2,7 @@
 
 **Reviewed:** 2026-10-11
 **Source branch:** `arena/66abfdc9-tri-core-browser`
-**Current-revision Windows/MSVC/WARP validation:** pending; see `docs/TEST_RESULTS.md` and the Windows Actions artifact for evidence. Physical-GPU validation is not run.
+**Current app-source Windows CI (`59018a6`):** native MSVC/CMake build and isolated D3D12 FSR1-on-WARP regression passed ([run 38144964911](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38144964911)); the packaged browser smoke failed and produced no accepted capture-to-FSR evidence ([run 38144964898](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38144964898)). Physical-GPU validation is not run.
 
 ## Compatibility and evidence matrix
 
@@ -11,8 +11,8 @@
 | Chromium GPU/WebGL/WebGPU detection | **Implemented; live packaged observations pending** | Electron/Chromium diagnostics report devices, feature status, WebGL2/WebGPU capability and renderer strings. They do not prove FSR/DLSS initialization or page-frame processing. |
 | Chromium WebAssembly | **Tested / working as a runtime diagnostic** | The renderer compiles and executes a small module and verifies `19 + 23 = 42`; tests cover the module and benchmark. WASM is not an image upscaler. |
 | Standard browser rendering | **Tested / working** | Regular pages remain in Chromium; manual unsupported/failed upscaler selection falls back to standard rendering. |
-| Bundled animated WebGL2 test scene → `capturePage()` PNG → D3D12 FSR1 → preview | **Implemented in source; current Windows validation pending** | A user action captures only TRI-CORE's visible, active, app-owned diagnostic `WebContentsView`. The helper decodes the PNG, uploads it into its own D3D12 texture, runs official FSR 1.0.2 EASU + RCAS, writes a PNG/report, and returns a preview. The mandatory packaged smoke gate is intended to validate three unique changing frames at three captured resolutions on WARP. This is CPU screenshot/readback + separate upload/readback, not zero-copy or a page-render replacement. |
-| Native synthetic-pattern FSR1 regression | **Implemented; Windows WARP gate pending for this revision** | Preserved separately to validate the D3D12 shader pipeline. Historical CI passed this synthetic path on an earlier commit; do not use that as evidence for the new browser-PNG path or current revision. |
+| Bundled animated WebGL2 test scene → `capturePage()` PNG → D3D12 FSR1 → preview | **Implemented in source; packaged smoke failed, frame processing not verified** | A user action captures only TRI-CORE's visible, active, app-owned diagnostic `WebContentsView`. The helper decodes the PNG, uploads it into its own D3D12 texture, runs official FSR 1.0.2 EASU + RCAS, writes a PNG/report, and returns a preview. The packaged smoke on app-source commit `59018a6` failed in the combined executable-check/smoke step; exact subcheck and successful three-frame evidence are unknown. This is CPU screenshot/readback + separate upload/readback, not zero-copy or a page-render replacement. |
+| Native synthetic-pattern FSR1 regression | **WARP passed on app-source commit `59018a6`; software only** | The isolated workflow compiled the helper and processed its synthetic regression input on WARP ([run 38144964911](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38144964911)). This does not prove browser-PNG processing or physical-GPU operation. |
 | AMD physical GPU | **Not run** | A non-software DXGI adapter or vendor ID is not by itself proof of a physical AMD device. Run the hardware command and review model/vendor/driver/API/captures on an actual device. |
 | Arbitrary HTTP(S) pages, browser games, WebGL/WebGPU content | **Architecture-blocked / unsupported by this implementation** | Electron `WebContentsView` exposes no supported handle/synchronization contract for arbitrary page color/depth/motion-vector textures or the Chromium compositor swap chain. The app deliberately does not instrument websites or inspect renderer/GPU-process memory. |
 | Video, protected/DRM content, cloud streaming, external applications | **Unsupported / not tested** | No video/compositor or desktop-capture path is implemented. The test scene only is in scope. |
@@ -54,8 +54,8 @@ No sandbox weakening, TLS bypass, remote-page native-code access, driver install
 
 ## Verification and next gates
 
-1. Run `npm test`, syntax checks, and `npm run build` on the current source.
-2. Require Windows Actions to compile/package the native helper and process three distinct `capturePage()` PNG inputs through FSR on WARP, then upload the individual input/output PNGs and native reports.
+1. `npm test`, syntax checks, and `npm run build` passed locally; Linux CI also passed on app-source commit `59018a6`.
+2. The current app-source Windows Actions run compiled the helper and passed the isolated synthetic WARP regression, but the packaged executable-check/smoke step failed. Diagnose using the job summary/diagnostics and rerun until three distinct `capturePage()` PNG inputs are proven to pass through FSR on WARP and their input/output/bilinear-reference PNGs plus reports are reviewed.
 3. Keep physical-GPU/AMD-vendor validation marked `NOT RUN` until someone runs `--hardware --adapter-index N` on an identified real adapter and reviews the captured evidence.
 4. Keep arbitrary-page/real-time integration blocked until a safe, supported Chromium compositor/device bridge exists; do not market the controlled experiment as general website/game upscaling.
 5. Revisit DLSS only with documented NVIDIA authorization, official runtime/redistribution terms, a controlled native renderer, and compatible hardware.

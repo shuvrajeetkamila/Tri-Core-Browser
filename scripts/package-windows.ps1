@@ -44,14 +44,24 @@ if ($fsrSummary.status -ne 'PASS' -or $fsrSummary.source -ne 'Electron WebConten
     -or $fsrSummary.frames.Count -ne 3) {
   throw 'Browser-frame FSR1 evidence does not prove three changing capturePage PNG frames processed on WARP.'
 }
+$referencePaths = @()
 foreach ($frame in $fsrSummary.frames) {
   if ($frame.nativeReport.status -ne 'PASS' -or $frame.nativeReport.inputSource -ne 'Electron WebContents.capturePage() PNG'
-      -or $frame.nativeReport.softwareAdapter -ne $true -or $frame.nativeReport.processingStatus -ne 'PASS') {
-    throw 'A per-frame native report does not validate the capturePage PNG to FSR1 WARP path.'
+      -or $frame.nativeReport.softwareAdapter -ne $true -or $frame.nativeReport.processingStatus -ne 'PASS'
+      -or [string]$frame.nativeReport.bilinearReferencePath -ne [string]$frame.referencePath) {
+    throw 'A per-frame native report does not validate the capturePage PNG to FSR1 WARP path and its bilinear-reference path.'
   }
-  foreach ($imagePath in @($frame.inputPath, $frame.outputPath, $frame.referencePath, $frame.reportPath)) {
-    if (-not (Test-Path $imagePath -PathType Leaf)) { throw "Browser-frame FSR1 evidence is missing: $imagePath" }
+  $referencePaths += [System.IO.Path]::GetFullPath([string]$frame.referencePath)
+  foreach ($evidencePath in @($frame.inputPath, $frame.outputPath, $frame.referencePath, $frame.reportPath)) {
+    if (-not (Test-Path $evidencePath -PathType Leaf)) { throw "Browser-frame FSR1 evidence is missing: $evidencePath" }
   }
+  foreach ($imagePath in @($frame.inputPath, $frame.outputPath, $frame.referencePath)) {
+    $imageBytes = [System.IO.File]::ReadAllBytes($imagePath)
+    if ($imageBytes.Length -lt 80 -or $imageBytes[0] -ne 137 -or $imageBytes[1] -ne 80 -or $imageBytes[2] -ne 78 -or $imageBytes[3] -ne 71) { throw "Expected a non-empty browser-frame PNG: $imagePath" }
+  }
+}
+if (@($referencePaths | Sort-Object -Unique).Count -ne 3) {
+  throw 'The three browser frames must retain three distinct bilinear-reference PNG paths.'
 }
 $fsrEvidenceStage = Join-Path $stage 'diagnostics/fsr1-browser-frame-smoke'
 New-Item -ItemType Directory -Force -Path $fsrEvidenceStage | Out-Null

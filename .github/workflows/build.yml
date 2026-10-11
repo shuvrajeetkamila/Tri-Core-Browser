@@ -101,14 +101,18 @@ jobs:
           if ($summary.status -ne 'PASS' -or $summary.source -ne 'Electron WebContents.capturePage() PNG') { throw 'Browser-frame smoke report does not validate Electron capturePage PNG input.' }
           if ($summary.softwareAdapter -ne $true -or $summary.frameCount -ne 3 -or $summary.distinctInputFrames -ne 3 -or $summary.distinctInputResolutions -ne 3) { throw 'Browser-frame smoke must report three unique changing frames at three resolutions processed on WARP software, never as physical-GPU evidence.' }
           if ($summary.frames.Count -ne 3) { throw 'Browser-frame smoke report must contain three per-frame native reports.' }
+          $referencePaths = @()
           foreach ($frame in $summary.frames) {
             if ($frame.nativeReport.status -ne 'PASS' -or $frame.nativeReport.inputSource -ne 'Electron WebContents.capturePage() PNG' -or $frame.nativeReport.softwareAdapter -ne $true) { throw 'A per-frame report did not validate the screenshot-to-FSR WARP path.' }
+            if ([string]$frame.nativeReport.bilinearReferencePath -ne [string]$frame.referencePath) { throw 'A per-frame report did not match its own bilinear-reference PNG path.' }
+            $referencePaths += [System.IO.Path]::GetFullPath([string]$frame.referencePath)
             if (-not (Test-Path $frame.inputPath -PathType Leaf) -or -not (Test-Path $frame.outputPath -PathType Leaf) -or -not (Test-Path $frame.referencePath -PathType Leaf) -or -not (Test-Path $frame.reportPath -PathType Leaf)) { throw 'A browser capture, processed PNG, bilinear reference, or per-frame report is missing.' }
             foreach ($imagePath in @($frame.inputPath, $frame.outputPath, $frame.referencePath)) {
               $imageBytes = [System.IO.File]::ReadAllBytes($imagePath)
               if ($imageBytes.Length -lt 80 -or $imageBytes[0] -ne 137 -or $imageBytes[1] -ne 80 -or $imageBytes[2] -ne 78 -or $imageBytes[3] -ne 71) { throw "Expected a non-empty PNG capture: $imagePath" }
             }
           }
+          if (@($referencePaths | Sort-Object -Unique).Count -ne 3) { throw 'The three frames must retain three distinct bilinear-reference PNG paths.' }
           $releaseEvidence = Join-Path $PWD 'release/fsr1-browser-frame-smoke'
           if (Test-Path $releaseEvidence) { Remove-Item $releaseEvidence -Recurse -Force }
           Copy-Item $fsrSmokeOut $releaseEvidence -Recurse -Force
@@ -118,21 +122,36 @@ jobs:
           Write-Host "PASS: $($exeItem.Length) byte Windows x64 portable executable; 3 distinct changing WebContentsView capturePage PNG frames at 3 resolutions processed by the FSR1 D3D12 helper on WARP; physical-GPU validation remains NOT RUN."
       - name: Surface packaged smoke diagnostics
         if: failure() && steps.packaged_smoke.outcome == 'failure'
-        shell: bash
+        shell: pwsh
         run: |
-          runner_temp=$(cygpath -u "$RUNNER_TEMP")
-          for log_path in \
-            "$runner_temp/tricore-smoke.stdout.txt" \
-            "$runner_temp/tricore-smoke.stderr.txt" \
-            "$runner_temp/tricore-fsr-browser-frame-smoke/browser-frame-smoke-summary.json"; do
-            [ -f "$log_path" ] || continue
-            while IFS= read -r line; do
-              line=${line//'%'/'%25'}
-              line=${line//$'\r'/'%0D'}
-              line=${line:0:700}
-              printf '::error title=Packaged browser smoke detail::%s\n' "$line"
-            done < <(tail -n 8 "$log_path")
-          done
+          $ErrorActionPreference = 'Stop'
+          $diagnosticFiles = @(
+            'tricore-smoke.stdout.txt',
+            'tricore-smoke.stderr.txt',
+            'tricore-fsr-browser-frame-smoke/browser-frame-smoke-summary.json'
+          )
+          $diagnosticLines = [System.Collections.Generic.List[string]]::new()
+          $diagnosticLines.Add('# Packaged browser smoke diagnostics')
+          $diagnosticLines.Add('')
+          foreach ($relativePath in $diagnosticFiles) {
+            $logPath = Join-Path $env:RUNNER_TEMP $relativePath
+            $diagnosticLines.Add("## $relativePath")
+            $diagnosticLines.Add('')
+            $diagnosticLines.Add('```text')
+            if (Test-Path $logPath -PathType Leaf) {
+              $tail = @(Get-Content -Path $logPath -Tail 80)
+              if ($tail.Count -eq 0) { $diagnosticLines.Add('[file exists but is empty]') }
+              else { foreach ($line in $tail) { $diagnosticLines.Add([string]$line) } }
+            } else {
+              $diagnosticLines.Add('[file was not produced]')
+            }
+            $diagnosticLines.Add('```')
+            $diagnosticLines.Add('')
+          }
+          $diagnosticPath = Join-Path $env:RUNNER_TEMP 'tricore-smoke-diagnostics.md'
+          $diagnosticContent = $diagnosticLines.ToArray()
+          Set-Content -Path $diagnosticPath -Value $diagnosticContent -Encoding utf8
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $diagnosticContent -Encoding utf8
       - name: Upload packaged smoke diagnostics
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -141,6 +160,7 @@ jobs:
           path: |
             ${{ runner.temp }}/tricore-smoke.stdout.txt
             ${{ runner.temp }}/tricore-smoke.stderr.txt
+            ${{ runner.temp }}/tricore-smoke-diagnostics.md
             ${{ runner.temp }}/tricore-fsr-browser-frame-smoke/**
           if-no-files-found: ignore
           retention-days: 7

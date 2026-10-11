@@ -2,7 +2,7 @@
 
 A standalone Windows desktop browser built on Electron's bundled Chromium runtime. Three independent browser cores let you compare pages side by side; each core supports its own tabs, navigation history, bookmarks, downloads, and profile storage.
 
-> **Honest graphics status:** Chromium WebAssembly is exercised by a real, repeatable diagnostic. The source now includes an opt-in AMD FSR 1.0.2 test path for a bundled animated WebGL2 scene: Electron captures the real `WebContentsView` as a PNG, a separate D3D12 helper processes it, and the result returns as a comparison preview. This is screenshot/readback processing—not zero-copy, real-time, or general-page upscaling. Windows build/WARP validation for this revision is pending; physical-GPU validation is not run. DLSS remains unavailable, ordinary pages keep standard Chromium rendering, and no performance gain is claimed.
+> **Honest graphics status (CI for app-source commit `59018a6`, 2026-10-11):** Chromium WebAssembly is exercised by a real, repeatable diagnostic. The Windows native D3D12 helper built and processed its synthetic regression input through AMD FSR 1.0.2 on WARP (software), but the packaged-app executable-check/smoke step failed. No successful browser-rendered `capturePage()` → FSR → preview evidence or current portable package is accepted; the exact failing subcheck is unknown. The implemented browser experiment is bounded screenshot/readback, not zero-copy, real-time, or general-page upscaling. Physical-GPU validation is not run. DLSS remains unavailable, ordinary pages keep standard Chromium rendering, and no performance gain is claimed.
 
 ## What works today
 
@@ -18,7 +18,7 @@ A standalone Windows desktop browser built on Electron's bundled Chromium runtim
 
 ## Windows download and launch
 
-**Release status:** download only a tested prerelease produced by Windows CI. If the Releases page has no matching assets, a verified Windows download is not yet available.
+**Release status:** the existing prereleases predate the current graphics diagnostic and do not validate app-source commit `59018a6`. The current Windows executable/smoke gate failed, so no portable artifact for this source was published. A current release is blocked until the packaged browser-frame smoke passes.
 
 1. Open the [GitHub Releases page](https://github.com/shuvrajeetkamila/Tri-Core-Browser/releases) and download `TriCoreBrowser.exe` or the `TriCoreBrowser-Windows-x64-portable.zip` package from a tested release.
 2. If you downloaded the ZIP, extract it first.
@@ -34,7 +34,7 @@ Open **Modes** in the top toolbar.
 | --- | --- | --- |
 | **WASM MODE** | Compiles and runs the project's small WebAssembly test inside Chromium/V8. | Implemented; test result and timing are shown. It does not upscale pages or promise higher frame rates. |
 | **NVIDIA DLSS MODE** | Requests a native DLSS rendering path. | **Not integrated.** The controller reports why and falls back to standard Chromium. An NVIDIA GPU/driver alone is not enough. |
-| **AMD FSR MODE** | Selects the status for the limited FSR1 diagnostic; it does not replace normal page rendering. In the advanced panel, a user may opt in to capture the bundled WebGL2 test scene as a PNG, process it through the native AMD FSR1 EASU + RCAS D3D12 helper, and view a returned preview. | Source implemented; current Windows packaged/WARP validation pending. It is not an arbitrary-page, in-compositor, zero-copy, or real-time upscaler. Standard Chromium remains active for regular pages. |
+| **AMD FSR MODE** | Selects the status for the limited FSR1 diagnostic; it does not replace normal page rendering. In the advanced panel, a user may opt in to capture the bundled WebGL2 test scene as a PNG, process it through the native AMD FSR1 EASU + RCAS D3D12 helper, and view a returned preview. | Native synthetic-input WARP regression passed, but the current packaged browser-frame smoke failed and capture-to-FSR processing remains unverified. It is not an arbitrary-page, in-compositor, zero-copy, or real-time upscaler. Standard Chromium remains active for regular pages. |
 | **HYBRID MODE** | Applies the automatic native-backend priority only when a compatible, initialized renderer integration is proven. | DLSS is unavailable and the FSR capture helper is manual-only, so normal pages safely stay on standard Chromium; WASM remains a separate runtime diagnostic. |
 | **STANDARD MODE** | Uses the normal Chromium renderer; Chromium/the driver chooses hardware or software compositing. | Implemented and active by default. |
 

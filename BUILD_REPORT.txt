@@ -3,20 +3,25 @@ TRI-CORE BROWSER — CHECKED-IN BUILD STATUS
 Report date (UTC): 2026-10-11
 Repository: https://github.com/shuvrajeetkamila/Tri-Core-Browser
 Source branch: arena/66abfdc9-tri-core-browser
-Source commit: see the Git revision and the commit-specific CI build report
+App-source commit with Windows CI evidence: 59018a6f21852761db2677d3d1fee58f5864834e
 
 Local build host: Linux x86_64 (Arena workspace)
 Node.js: 22.22.3
 npm: 10.9.8
-Electron: 44.7.0 (Chromium version is recorded by the Windows app diagnostics and CI report)
+Electron: 44.7.0
 Electron Builder: 26.17.0
 Renderer build: PASS (`npm run build`)
-Automated unit tests: PASS (15 tests)
-Full locked dependency audit: PASS (8 moderate findings in the 2026-10-11 report; 0 high or critical). This includes the Electron package and build tooling; see the attached dependency audit.
-Windows Release build in this local host: BLOCKED (no Windows compiler/SDK or Windows runtime available)
+Automated unit tests: PASS (36/36)
+Full locked dependency audit: PASS at the high/critical threshold (8 moderate findings; 0 high or critical on 2026-10-11).
 
-IMPORTANT: This checked-in status summary is not proof that a Windows executable exists. The exact per-build source SHA, runner/compiler/runtime versions, packaged-app smoke-test output, executable path, result, and size are written by scripts/package-windows.ps1 in the Windows GitHub Actions job. A downloadable executable may only be claimed after that job succeeds; the report is then shipped beside the tested executable and portable ZIP. See docs/BUILD_WINDOWS.md and docs/TEST_RESULTS.md.
+Windows native D3D12 helper CMake/MSVC build: PASS in [Windows WARP workflow run 38144964911](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38144964911).
+Native synthetic-input AMD FSR1 EASU/RCAS processing: PASS on D3D12 WARP software in that run; this is component regression coverage only, not physical GPU or browser-frame evidence.
+Windows `npm run package:win`: command completed, but the subsequent combined executable-check/packaged-smoke step failed in [run 38144964898](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38144964898). The exact failing subcheck is unknown. Portable distribution assembly/upload was skipped, so no tested Windows executable or ZIP was published for this source.
+Packaged browser-frame FSR path: NOT VERIFIED. The smoke diagnostics artifact was uploaded, but its signed download could not be retrieved from this environment; no passing browser-PNG → FSR → preview evidence is accepted.
+Physical GPU / AMD-vendor hardware validation: NOT RUN. WARP is software.
 
-DLSS: NOT IMPLEMENTED / NOT TESTED. No NVIDIA Streamline integration or runtime is shipped.
-FSR: NOT IMPLEMENTED / NOT TESTED. No AMD FidelityFX integration is shipped.
-WASM: controlled module passes automated Node/V8 tests; packaged Windows Chromium results are recorded per commit in the Windows smoke-test report.
+This file is a checked-in source/status summary, not a Windows build artifact. The current per-build report, executable path/size, captures, and per-frame reports can only be generated and distributed after the packaged smoke gate passes. See docs/TEST_RESULTS.md and docs/BUILD_WINDOWS.md.
+
+DLSS / Frame Generation: NOT IMPLEMENTED / NOT TESTED. No authorized NVIDIA Streamline feature runtime is shipped.
+FSR: Licensed AMD FSR 1.0.2 shader inputs and a D3D12 harness are implemented; the isolated native synthetic WARP regression passed, but packaged browser-capture processing is not verified.
+WASM: controlled module passes automated Node/V8 tests; packaged Chromium runtime results are recorded per commit in Windows smoke evidence.

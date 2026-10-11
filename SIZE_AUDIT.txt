@@ -1,11 +1,12 @@
 TRI-CORE BROWSER — SIZE AUDIT STATUS
 
 Report date (UTC): 2026-10-11
+App-source commit with Windows CI evidence: 59018a6f21852761db2677d3d1fee58f5864834e
 
-Windows x64 executable: NOT AVAILABLE IN THE LINUX WORKSPACE; size not measured.
-Portable Windows package: NOT AVAILABLE IN THE LINUX WORKSPACE; size not measured.
+Windows x64 executable: the Windows `npm run package:win` command completed in CI, but the subsequent combined executable-check/packaged-smoke step failed. No executable artifact or exact byte count was published; the smoke subcheck and size are not confirmed here.
+Portable Windows package: not assembled or uploaded because the packaged-app smoke gate failed; size not measured.
 Installer: not built; size not measured.
 
-No placeholder binary is committed. The Windows GitHub Actions job verifies that release/TriCoreBrowser.exe exists and exceeds a 30,000,000-byte minimum, then scripts/package-windows.ps1 measures the executable, the complete portable staging directory, and the final ZIP. The exact byte counts are written to the generated SIZE_AUDIT.txt attached to the workflow artifact and release only after the packaged app passes its smoke test.
+No placeholder binary is committed. The Windows workflow is intended to validate the executable and, only after the full packaged browser-frame smoke succeeds, run scripts/package-windows.ps1 to measure the executable, complete portable staging directory, and final ZIP. Those exact byte counts and checksums belong in the generated per-build reports; they are not inferred from a successful `npm run package:win` command alone.
 
-Runtime packaging design: one self-extracting portable Electron/Chromium executable; the release ZIP adds documentation, source/module notes, and third-party license files. No separately installed Chrome/Edge runtime is required. Build outputs are ignored by Git and not committed to source history.
+Runtime packaging design: one self-extracting portable Electron/Chromium executable; the release ZIP adds documentation, source/module notes, AMD attribution, and third-party license files. No separately installed Chrome/Edge runtime is required. Build outputs are ignored by Git and not committed to source history.
