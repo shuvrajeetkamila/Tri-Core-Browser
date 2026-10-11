@@ -161,6 +161,10 @@ jobs:
           $diagnosticContent = $diagnosticLines.ToArray()
           Set-Content -Path $diagnosticPath -Value $diagnosticContent -Encoding utf8
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $diagnosticContent -Encoding utf8
+          $annotationText = $diagnosticContent -join "`n"
+          if ($annotationText.Length -gt 8000) { $annotationText = $annotationText.Substring(0, 8000) + "`n[diagnostic annotation truncated]" }
+          $annotationText = $annotationText.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+          Write-Output "::error title=Packaged browser smoke diagnostics::$annotationText"
       - name: Upload packaged smoke diagnostics
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9

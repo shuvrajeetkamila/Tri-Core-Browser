@@ -12,6 +12,7 @@ test('Windows build and release gates validate distinct bilinear references and 
     assert.ok(workflow.includes('$referencePaths | Sort-Object -Unique'), `${workflowName} must require a distinct reference path per frame`);
     assert.ok(workflow.includes('tricore-smoke-diagnostics.md'), `${workflowName} must retain a readable smoke summary`);
     assert.ok(workflow.includes('$env:GITHUB_STEP_SUMMARY'), `${workflowName} must expose smoke details in the Actions summary`);
+    assert.ok(workflow.includes('::error title=Packaged browser smoke diagnostics::'), `${workflowName} must expose smoke details as a check annotation`);
     assert.ok(workflow.includes('id: packaged_executable'), `${workflowName} must report executable validation separately`);
     assert.ok(workflow.includes('id: packaged_smoke'), `${workflowName} must report browser smoke separately`);
     assert.ok(workflow.includes('steps.packaged_executable.outcome == \'failure\''), `${workflowName} must surface diagnostics when executable validation fails`);
