@@ -97,7 +97,7 @@ jobs:
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
         with:
           name: TriCoreBrowser-Windows-x64-release
-          path: release
+          path: .
       - name: Validate assets and publish prerelease
         env:
           GH_TOKEN: ${{ github.token }}
