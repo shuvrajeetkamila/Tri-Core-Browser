@@ -25,4 +25,5 @@ test('Windows build and release gates validate distinct bilinear references and 
 
   const packageScript = fs.readFileSync(new URL('../scripts/package-windows.ps1', import.meta.url), 'utf8');
   assert.ok(packageScript.includes('[System.IO.Path]::GetFullPath([string]$frame.nativeReport.bilinearReferencePath) -ne [System.IO.Path]::GetFullPath([string]$frame.referencePath)'), 'the packaging gate must normalize Windows slash direction before comparing reference paths');
+  assert.doesNotMatch(packageScript, /^\s+-(?:or|and)\b/m, 'the PowerShell package-gate boolean expressions must not begin continuation lines with an operator');
 });

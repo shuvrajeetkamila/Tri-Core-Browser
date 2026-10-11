@@ -38,17 +38,12 @@ if ($env:TRICORE_FSR_BROWSER_SMOKE -ne 'PASS' -or -not $env:TRICORE_FSR_SMOKE_OU
 $fsrSmokeRoot = Join-Path $env:TRICORE_FSR_SMOKE_OUT 'browser-frame-smoke-summary.json'
 if (-not (Test-Path $fsrSmokeRoot -PathType Leaf)) { throw 'Browser-frame FSR1 smoke summary is missing.' }
 $fsrSummary = Get-Content $fsrSmokeRoot -Raw | ConvertFrom-Json
-if ($fsrSummary.status -ne 'PASS' -or $fsrSummary.source -ne 'Electron WebContents.capturePage() PNG'
-    -or $fsrSummary.softwareAdapter -ne $true -or $fsrSummary.frameCount -ne 3 -or $fsrSummary.distinctInputFrames -ne 3
-    -or $fsrSummary.distinctInputResolutions -ne 3
-    -or $fsrSummary.frames.Count -ne 3) {
+if ($fsrSummary.status -ne 'PASS' -or $fsrSummary.source -ne 'Electron WebContents.capturePage() PNG' -or $fsrSummary.softwareAdapter -ne $true -or $fsrSummary.frameCount -ne 3 -or $fsrSummary.distinctInputFrames -ne 3 -or $fsrSummary.distinctInputResolutions -ne 3 -or $fsrSummary.frames.Count -ne 3) {
   throw 'Browser-frame FSR1 evidence does not prove three changing capturePage PNG frames processed on WARP.'
 }
 $referencePaths = @()
 foreach ($frame in $fsrSummary.frames) {
-  if ($frame.nativeReport.status -ne 'PASS' -or $frame.nativeReport.inputSource -ne 'Electron WebContents.capturePage() PNG'
-      -or $frame.nativeReport.softwareAdapter -ne $true -or $frame.nativeReport.processingStatus -ne 'PASS'
-      -or [System.IO.Path]::GetFullPath([string]$frame.nativeReport.bilinearReferencePath) -ne [System.IO.Path]::GetFullPath([string]$frame.referencePath)) {
+  if ($frame.nativeReport.status -ne 'PASS' -or $frame.nativeReport.inputSource -ne 'Electron WebContents.capturePage() PNG' -or $frame.nativeReport.softwareAdapter -ne $true -or $frame.nativeReport.processingStatus -ne 'PASS' -or [System.IO.Path]::GetFullPath([string]$frame.nativeReport.bilinearReferencePath) -ne [System.IO.Path]::GetFullPath([string]$frame.referencePath)) {
     throw 'A per-frame native report does not validate the capturePage PNG to FSR1 WARP path and its bilinear-reference path.'
   }
   $referencePaths += [System.IO.Path]::GetFullPath([string]$frame.referencePath)
