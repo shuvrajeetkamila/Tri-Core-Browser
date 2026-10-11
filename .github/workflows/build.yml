@@ -193,7 +193,17 @@ jobs:
           retention-days: 7
       - name: Assemble portable distribution and reports
         shell: pwsh
-        run: '& .\scripts\package-windows.ps1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          try {
+            & .\scripts\package-windows.ps1
+          } catch {
+            $packageFailure = "[package] Portable distribution assembly failed at line $($_.InvocationInfo.ScriptLineNumber): $($_.Exception.Message)`n$($_.ScriptStackTrace)"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $packageFailure -Encoding utf8
+            $annotationText = $packageFailure.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error title=Portable distribution assembly failed::$annotationText"
+            throw
+          }
       - name: Upload Windows portable package and reports
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
