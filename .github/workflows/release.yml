@@ -1,6 +1,9 @@
 name: Build and publish Windows prerelease
 
 on:
+  push:
+    branches:
+      - arena/66abfdc9-tri-core-browser
   workflow_dispatch:
     inputs:
       release_tag:
@@ -20,6 +23,7 @@ permissions:
 jobs:
   windows-release-build:
     name: Rebuild and smoke-test Windows x64
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.event.head_commit.message, '[publish-prerelease ')) }}
     runs-on: windows-latest
     permissions:
       contents: read
@@ -82,7 +86,7 @@ jobs:
 
   publish-prerelease:
     name: Publish tested GitHub prerelease
-    if: ${{ inputs.publish }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.publish) || (github.event_name == 'push' && startsWith(github.event.head_commit.message, '[publish-prerelease ')) }}
     needs: windows-release-build
     runs-on: ubuntu-latest
     permissions:
@@ -97,11 +101,25 @@ jobs:
       - name: Validate assets and publish prerelease
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_TAG: ${{ inputs.release_tag }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[0-9]+$ ]]; then
+          if [[ "$EVENT_NAME" == 'push' ]]; then
+            subject=$(printf '%s' "$COMMIT_MESSAGE" | head -n 1)
+            prefix='[publish-prerelease '
+            if [[ "$subject" != "$prefix"* || "$subject" != *']' ]]; then
+              echo 'Opt-in commit subject must be [publish-prerelease v1.0.0-alpha.1].' >&2
+              exit 1
+            fi
+            RELEASE_TAG="${subject#"$prefix"}"
+            RELEASE_TAG="${RELEASE_TAG%]}"
+          else
+            RELEASE_TAG="$DISPATCH_TAG"
+          fi
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+[.][0-9]+[.][0-9]+-(alpha|beta|rc)[.][0-9]+$ ]]; then
             echo 'This build is experimental. Use a prerelease tag such as v1.0.0-alpha.1; stable releases are disabled.' >&2
             exit 1
           fi

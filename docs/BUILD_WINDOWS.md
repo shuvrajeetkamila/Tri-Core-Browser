@@ -43,7 +43,7 @@ The full npm audit report is retained as a CI artifact. The current package has 
 
 ## Release workflow
 
-`.github/workflows/release.yml` is manual. Select the exact branch/ref you intend to ship (for this change, `arena/66abfdc9-tri-core-browser`); it always rebuilds and reruns the packaged-app test for that ref. A release is only published when its explicit `publish` input is enabled; experimental builds must use a prerelease tag such as `v1.0.0-alpha.1`. Normal pushes and pull requests do not create public releases. The workflow uploads `TriCoreBrowser.exe`, `TriCoreBrowser-Windows-x64-portable.zip`, `BUILD_REPORT.txt`, `SIZE_AUDIT.txt`, and `SHA256SUMS.txt` to the GitHub Release.
+`.github/workflows/release.yml` rebuilds and reruns the packaged-app test before publication. On this session branch, the release path is explicitly opted into by a commit subject of the exact form `[publish-prerelease v1.0.0-alpha.1]`; it only listens to `arena/66abfdc9-tri-core-browser`, and stable tags are rejected. The file also defines a manual `workflow_dispatch` path with an explicit publish input for repositories/refs where GitHub exposes it. Ordinary commits and pull requests do not publish a public release. The workflow uploads `TriCoreBrowser.exe`, `TriCoreBrowser-Windows-x64-portable.zip`, `BUILD_REPORT.txt`, `SIZE_AUDIT.txt`, and `SHA256SUMS.txt` to the GitHub Release.
 
 ## Build environment limits
 
