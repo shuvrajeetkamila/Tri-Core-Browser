@@ -40,7 +40,7 @@ Retain all three cores, navigation, tabs, profile, bookmarks/history, downloads,
 - Keep detection, D3D12 feature compatibility, helper initialization, active processing, processed frame counts, failure and unsupported states distinct. Vendor identity does not imply support.
 - Auto priority is DLSS → FSR → WASM when an integration is actually compatible and initialized. The FSR screenshot helper is manual-only and not eligible to replace ordinary page rendering; WASM stays runtime-only, not image upscaling.
 - Unsupported/failed native requests keep standard Chromium active. The semantic keyboard-operable performance disclosure persists collapsed state; collapse only affects UI/layout, not browser processing.
-- Current local tests pass **36/36**, the renderer builds, and syntax/workflow checks pass. Windows CI on app-source commit `b7e844f` passed the native helper/WARP regression and executable presence/size check, but failed the separate packaged-browser smoke; only the native synthetic result is accepted as component evidence.
+- Current local tests pass **37/37**, the renderer builds, and syntax/workflow checks pass. Windows CI on app-source commit `b7e844f` passed the native helper/WARP regression and executable presence/size check, but failed the separate packaged-browser smoke; only the native synthetic result is accepted as component evidence.
 
 ### Stage 2 — Native FSR1 D3D12 harness (**source implemented; current Windows CMake/MSVC + WARP component regression passed**)
 
@@ -84,7 +84,7 @@ On a real Windows device, run `--list-adapters`, then `--hardware --adapter-inde
 
 | Check | Current status |
 | --- | --- |
-| `npm test` | **PASS — 36/36** after the latest source edits. |
+| `npm test` | **PASS — 37/37** after the latest source edits. |
 | `npm run build` | **PASS** after the latest renderer edits. |
 | JavaScript syntax checks | **PASS** for main, preload, bridge, renderer, preferences, and graphics controller. |
 | GitHub workflow / package JSON syntax | **PASS** — `js-yaml` parsed all three workflow files; package JSON parsed. PowerShell script syntax remains unverified on this Linux host. |

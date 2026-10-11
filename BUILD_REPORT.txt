@@ -11,7 +11,7 @@ npm: 10.9.8
 Electron: 44.7.0
 Electron Builder: 26.17.0
 Renderer build: PASS (`npm run build`)
-Automated unit tests: PASS (36/36)
+Automated unit tests: PASS (37/37)
 Full locked dependency audit: PASS at the high/critical threshold (8 moderate findings; 0 high or critical on 2026-10-11).
 
 Windows native D3D12 helper CMake/MSVC build: PASS in [Windows WARP workflow run 38146013763](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38146013763).

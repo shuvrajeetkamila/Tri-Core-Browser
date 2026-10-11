@@ -8,7 +8,7 @@
 
 | Check | Result | Evidence / limits |
 | --- | --- | --- |
-| `npm test` | **PASS — 36/36** | Node tests cover URL parsing, fixed graphics lifecycle/priority/fallback, persistent preferences, accessible panel disclosure behavior, real WebAssembly execution, FSR capture request/context/size limits, native argument construction, per-frame bilinear-reference paths, browser-PNG report validation, and the Windows smoke workflow gates. |
+| `npm test` | **PASS — 37/37** | Node tests cover URL parsing, fixed graphics lifecycle/priority/fallback, persistent preferences, accessible panel disclosure behavior, real WebAssembly execution, FSR capture request/context/size limits, native argument construction, per-frame bilinear-reference paths, browser-PNG report validation, and the Windows smoke workflow gates. |
 | `npm run build` | **PASS** | Vite 8.3.4 production renderer build completed. This does not build the Electron main process as a package or compile the Windows helper. |
 | JavaScript syntax checks | **PASS** | `node --check` passed for JavaScript/CommonJS files under `electron/`, `src/`, `tests/`, and `scripts/`. |
 | `git diff --check` | **PASS** | No whitespace errors in the committed changes. |

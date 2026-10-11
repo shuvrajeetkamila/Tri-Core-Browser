@@ -54,7 +54,7 @@ No sandbox weakening, TLS bypass, remote-page native-code access, driver install
 
 ## Verification and next gates
 
-1. `npm test` (36/36), syntax checks, and `npm run build` passed locally; the Linux tests/build/audit job also passed on app-source commit `b7e844f`.
+1. `npm test` (37/37), syntax checks, and `npm run build` passed locally; the Linux tests/build/audit job also passed on app-source commit `b7e844f`.
 2. The current app-source Windows Actions run compiled the helper and passed the isolated synthetic WARP regression, and confirmed the portable executable passes its presence/size gate. The separate packaged smoke then failed (exit code 1); the exact internal cause remains unknown because the log/artifact download is inaccessible here. Inspect the uploaded diagnostics from the signed-in GitHub Actions page, then rerun until three distinct `capturePage()` PNG inputs are proven to pass through FSR on WARP and their input/output/bilinear-reference PNGs plus reports are reviewed.
 3. Keep physical-GPU/AMD-vendor validation marked `NOT RUN` until someone runs `--hardware --adapter-index N` on an identified real adapter and reviews the captured evidence.
 4. Keep arbitrary-page/real-time integration blocked until a safe, supported Chromium compositor/device bridge exists; do not market the controlled experiment as general website/game upscaling.

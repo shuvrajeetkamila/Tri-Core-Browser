@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('node:path');
+const { fileURLToPath } = require('node:url');
 
 const MAX_FSR_CAPTURE_FRAMES = 5;
 const MAX_CAPTURE_SLOT = 2;
@@ -8,6 +9,22 @@ const EXPECTED_INPUT_SOURCE = 'Electron WebContents.capturePage() PNG';
 const FSR_TECHNOLOGY = 'AMD FidelityFX FSR 1.0.2 EASU + RCAS';
 const MAX_INPUT_DIMENSION = 4096;
 const MAX_INPUT_PIXELS = 2_097_152;
+
+function isFileUrlForPath(value, expectedPath) {
+  if (typeof value !== 'string' || typeof expectedPath !== 'string' || !expectedPath) return false;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'file:' || url.search) return false;
+    url.hash = '';
+    const currentPath = path.resolve(fileURLToPath(url));
+    const targetPath = path.resolve(expectedPath);
+    return process.platform === 'win32'
+      ? currentPath.toLowerCase() === targetPath.toLowerCase()
+      : currentPath === targetPath;
+  } catch {
+    return false;
+  }
+}
 
 function normalizeCaptureRequest(payload = {}) {
   const slot = Number(payload.slot);
@@ -122,6 +139,7 @@ function validateNativeFsrReport(report, expectedInput = {}) {
 module.exports = {
   EXPECTED_INPUT_SOURCE,
   FSR_TECHNOLOGY,
+  isFileUrlForPath,
   MAX_FSR_CAPTURE_FRAMES,
   buildBilinearReferencePath,
   buildNativeFsrArguments,

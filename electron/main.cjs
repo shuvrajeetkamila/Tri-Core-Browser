@@ -17,6 +17,7 @@ const http = require('node:http');
 const { execFile } = require('node:child_process');
 const {
   EXPECTED_INPUT_SOURCE,
+  isFileUrlForPath,
   buildBilinearReferencePath,
   buildNativeFsrArguments,
   normalizeCaptureRequest,
@@ -34,6 +35,10 @@ const WEB_PROTOCOLS = new Set(['http:', 'https:']);
 const FSR_TEST_SCENE_PATH = path.join(__dirname, '..', 'app', 'diagnostics', 'fsr1-browser-game.html');
 const FSR_TEST_SCENE_URL = pathToFileURL(FSR_TEST_SCENE_PATH).href;
 const MAX_FSR_PREVIEW_BYTES = 12 * 1024 * 1024;
+
+function isBundledFsrTestSceneUrl(value) {
+  return isFileUrlForPath(String(value || ''), FSR_TEST_SCENE_PATH);
+}
 const coreTabs = Array.from({ length: CORE_COUNT }, () => []);
 const activeTabs = Array.from({ length: CORE_COUNT }, () => null);
 const layoutBounds = Array.from({ length: CORE_COUNT }, () => ({ x: 0, y: 0, width: 0, height: 0 }));
@@ -162,7 +167,7 @@ function tabState(tab) {
     canGoBack: contents.canGoBack(),
     canGoForward: contents.canGoForward(),
     error: tab.error,
-    fsrTestScene: Boolean(tab.isFsrTestScene && contents.getURL().split('#')[0] === FSR_TEST_SCENE_URL),
+    fsrTestScene: Boolean(tab.isFsrTestScene && isBundledFsrTestSceneUrl(contents.getURL())),
   };
 }
 
@@ -381,7 +386,7 @@ function makeWebContentsView(slot, tab) {
     return { action: 'deny' };
   });
   contents.on('will-navigate', (event, url) => {
-    const isApprovedDiagnosticNavigation = tab.isFsrTestScene && String(url).split('#')[0] === FSR_TEST_SCENE_URL;
+    const isApprovedDiagnosticNavigation = tab.isFsrTestScene && isBundledFsrTestSceneUrl(url);
     if (!safeWebUrl(url) && !isApprovedDiagnosticNavigation) event.preventDefault();
   });
   contents.on('will-redirect', (event, url) => {
@@ -688,18 +693,32 @@ async function processBrowserFsrFramesInternal(payload, { useWarp = false, smoke
     const activeTab = activeTabs[slot];
     const destroyed = !contents || contents.isDestroyed();
     const viewBounds = !destroyed && tab?.view ? tab.view.getBounds() : null;
-    return validateCaptureContext({
+    const currentUrl = !destroyed ? contents.getURL() : '';
+    const exactBundledSceneUrl = isBundledFsrTestSceneUrl(currentUrl);
+    const context = validateCaptureContext({
       requestedSlot: slot,
       requestedTabId: normalized.tabId,
       activeSlot: slot,
       activeTabId: activeTab?.id || '',
-      approvedScene: Boolean(tab?.isFsrTestScene),
-      currentUrl: !destroyed ? contents.getURL().split('#')[0] : '',
+      approvedScene: Boolean(tab?.isFsrTestScene && exactBundledSceneUrl),
+      currentUrl: exactBundledSceneUrl ? FSR_TEST_SCENE_URL : currentUrl.split('#')[0],
       expectedUrl: FSR_TEST_SCENE_URL,
       loading: destroyed || contents.isLoading(),
       viewVisible: Boolean(viewBounds && viewBounds.width > 0 && viewBounds.height > 0),
       windowVisible: Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized()),
     });
+    if (!context.ok && smokeTest) {
+      appendSmokeDiagnostic(`[smoke] Capture context denied: ${JSON.stringify({
+        sceneFlag: Boolean(tab?.isFsrTestScene),
+        exactBundledSceneUrl,
+        currentUrl,
+        expectedUrl: FSR_TEST_SCENE_URL,
+        loading: destroyed || contents.isLoading(),
+        viewBounds,
+        windowVisible: Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized()),
+      })}`);
+    }
+    return context;
   };
   const context = getCaptureContext();
   if (!context.ok) return context;

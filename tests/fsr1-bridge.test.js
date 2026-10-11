@@ -1,12 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const {
   EXPECTED_INPUT_SOURCE,
   FSR_TECHNOLOGY,
+  isFileUrlForPath,
   buildBilinearReferencePath,
   buildNativeFsrArguments,
   normalizeCaptureRequest,
@@ -58,6 +60,17 @@ test('capture is restricted to the visible active app-owned WebGL2 test scene', 
   assert.equal(validateCaptureContext({ ...valid, windowVisible: false }).ok, false);
   assert.equal(validateCaptureContext({ ...valid, loading: true }).ok, false);
   assert.equal(validateCaptureContext({ ...valid, activeTabId: 'other-tab' }).ok, false);
+});
+
+test('bundled FSR scene URL check normalizes file URLs but rejects other paths and protocols', () => {
+  const scenePath = path.resolve('app/diagnostics/fsr1-browser-game.html');
+  const sceneUrl = pathToFileURL(scenePath).href;
+  assert.equal(isFileUrlForPath(sceneUrl, scenePath), true);
+  assert.equal(isFileUrlForPath(`${sceneUrl}#frame`, scenePath), true);
+  assert.equal(isFileUrlForPath(`${sceneUrl}?external=1`, scenePath), false);
+  assert.equal(isFileUrlForPath(sceneUrl.replace('fsr1-browser-game.html', 'other.html'), scenePath), false);
+  assert.equal(isFileUrlForPath('https://example.com/fsr1-browser-game.html', scenePath), false);
+  assert.equal(isFileUrlForPath(sceneUrl, ''), false);
 });
 
 test('native helper uses a fixed argument vector and never invokes a command shell', () => {
