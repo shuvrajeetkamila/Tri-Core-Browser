@@ -46,6 +46,7 @@ jobs:
       - name: Build Windows x64 portable executable
         run: npm run package:win
       - name: Verify executable and run packaged-app smoke test
+        id: packaged_smoke
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -60,30 +61,16 @@ jobs:
           New-Item -ItemType Directory -Path $fsrSmokeOut -Force | Out-Null
           $env:TRICORE_REQUIRE_FSR_BROWSER_SMOKE = 'PASS'
           $env:TRICORE_FSR_SMOKE_OUT = $fsrSmokeOut
-          function Write-SmokeFailureDetail([string]$reason) {
-            $lines = @($reason)
-            if (Test-Path $stdout) { $lines += @(Get-Content $stdout -Tail 12) }
-            if (Test-Path $stderr) { $lines += @(Get-Content $stderr -Tail 12) }
-            $detail = ($lines | Select-Object -Last 20) -join ' | '
-            if ($detail.Length -gt 3500) { $detail = $detail.Substring($detail.Length - 3500) }
-            $escaped = $detail.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
-            Write-Output "::error title=Packaged smoke diagnostic::$escaped"
-            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ("Packaged smoke diagnostic:`n`n```text`n$detail`n```") -Encoding utf8
-          }
           $process = Start-Process -FilePath $exe -ArgumentList @('--smoke-test') -NoNewWindow -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
           if (-not $process.WaitForExit(150000)) {
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
             $process.WaitForExit()
-            Write-SmokeFailureDetail 'Packaged browser smoke test timed out after 150 seconds.'
             throw 'Packaged browser smoke test timed out after 150 seconds.'
           }
           $process.Refresh()
           if (Test-Path $stdout) { Get-Content $stdout }
           if (Test-Path $stderr) { Get-Content $stderr }
-          if ($process.ExitCode -ne 0) {
-            Write-SmokeFailureDetail "Packaged browser smoke test exited with $($process.ExitCode)."
-            throw "Packaged browser smoke test exited with $($process.ExitCode)."
-          }
+          if ($process.ExitCode -ne 0) { throw "Packaged browser smoke test exited with $($process.ExitCode)." }
           $smokeText = if (Test-Path $stdout) { Get-Content $stdout -Raw } else { '' }
           if (-not $smokeText.Contains('[smoke] Real WebContentsView WebGL2 capture')) { throw 'Packaged smoke log does not contain browser-frame capture-to-FSR evidence.' }
           $summaryPath = Join-Path $fsrSmokeOut 'browser-frame-smoke-summary.json'
@@ -107,6 +94,25 @@ jobs:
           Add-Content -Path $env:GITHUB_ENV -Value 'TRICORE_FSR_BROWSER_SMOKE=PASS' -Encoding utf8
           Add-Content -Path $env:GITHUB_ENV -Value "TRICORE_FSR_SMOKE_OUT=$fsrSmokeOut" -Encoding utf8
           Write-Host "PASS: $($exeItem.Length) byte Windows x64 portable executable; 3 distinct changing WebContentsView capturePage PNG frames at 3 resolutions processed by the FSR1 D3D12 helper on WARP; physical-GPU validation remains NOT RUN."
+      - name: Surface packaged smoke diagnostics
+        if: failure() && steps.packaged_smoke.outcome == 'failure'
+        shell: pwsh
+        run: |
+          $paths = @(
+            (Join-Path $env:RUNNER_TEMP 'tricore-smoke.stdout.txt'),
+            (Join-Path $env:RUNNER_TEMP 'tricore-smoke.stderr.txt'),
+            (Join-Path (Join-Path $env:RUNNER_TEMP 'tricore-fsr-browser-frame-smoke') 'browser-frame-smoke-summary.json')
+          )
+          $lines = @()
+          foreach ($logPath in $paths) {
+            if (Test-Path $logPath -PathType Leaf) { $lines += @(Get-Content $logPath -Tail 25) }
+          }
+          if ($lines.Count -eq 0) { $lines = @('No redirected smoke-test output was written.') }
+          $detail = ($lines | Select-Object -Last 25) -join ' | '
+          if ($detail.Length -gt 3500) { $detail = $detail.Substring($detail.Length - 3500) }
+          $escaped = $detail.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+          Write-Output "::error title=Packaged browser smoke details::$escaped"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ("Packaged browser smoke details:`n`n```text`n$detail`n```") -Encoding utf8
       - name: Assemble portable distribution and reports
         shell: pwsh
         run: '& .\scripts\package-windows.ps1'
