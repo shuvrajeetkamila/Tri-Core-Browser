@@ -2,7 +2,7 @@
 
 A standalone Windows desktop browser built on Electron's bundled Chromium runtime. Three independent browser cores let you compare pages side by side; each core supports its own tabs, navigation history, bookmarks, downloads, and profile storage.
 
-> **Honest graphics status (CI for app-source commit `b7e844f`, 2026-10-11):** Chromium WebAssembly is exercised by a real, repeatable diagnostic. The Windows native D3D12 helper built and processed its synthetic regression input through AMD FSR 1.0.2 on WARP (software), the packaged executable presence/size check passed, but the separate packaged-app smoke step failed. No successful browser-rendered `capturePage()` → FSR → preview evidence or current portable package is accepted; the exact internal smoke error is unknown. The implemented browser experiment is bounded screenshot/readback, not zero-copy, real-time, or general-page upscaling. Physical-GPU validation is not run. DLSS remains unavailable, ordinary pages keep standard Chromium rendering, and no performance gain is claimed.
+> **Honest graphics status (CI for app/source commit `eee56b7`, 2026-10-11):** The packaged Windows smoke validated three changing frames of TRI-CORE’s bundled WebGL2 scene at three capture resolutions: Electron `capturePage()` PNG → AMD FSR 1.0.2 EASU + RCAS in a separate D3D12 helper on WARP software → PNG/report validation. The portable Windows artifact assembled and uploaded successfully ([Actions run 38149140832](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38149140832)). This is a bounded screenshot/readback preview, not zero-copy, real-time, arbitrary-page upscaling, or performance evidence. Physical-GPU validation is not run. DLSS remains unavailable, ordinary pages keep standard Chromium rendering, and no performance gain is claimed.
 
 ## What works today
 
@@ -18,13 +18,13 @@ A standalone Windows desktop browser built on Electron's bundled Chromium runtim
 
 ## Windows download and launch
 
-**Release status:** the existing prereleases predate the current graphics diagnostic and do not validate app-source commit `b7e844f`. The Windows executable presence/size check passed but the packaged-app smoke failed, so no portable artifact for this source was published. A current release is blocked until the packaged browser-frame smoke passes.
+**Release status:** the tested portable build for app/source commit `eee56b7` is available as the `TriCoreBrowser-Windows-x64` Actions artifact in [run 38149140832](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38149140832) (30-day artifact retention). No new public GitHub Release has been published; existing Releases predate this build.
 
-1. Open the [GitHub Releases page](https://github.com/shuvrajeetkamila/Tri-Core-Browser/releases) and download `TriCoreBrowser.exe` or the `TriCoreBrowser-Windows-x64-portable.zip` package from a tested release.
-2. If you downloaded the ZIP, extract it first.
+1. Open the linked Actions run and download the `TriCoreBrowser-Windows-x64` artifact.
+2. Extract the Actions artifact, then optionally extract `TriCoreBrowser-Windows-x64-portable.zip`.
 3. Run `TriCoreBrowser.exe`. The portable application includes its Electron/Chromium runtime; no separate browser installation is required.
 
-The Windows executable is currently unsigned. Windows may display its normal SmartScreen/publisher warning. Download only from this repository's releases and verify the SHA-256 file included with each package. Browser profile data is kept in your Windows user profile, not beside the executable.
+The Windows executable is currently unsigned. Windows may display its normal SmartScreen/publisher warning. Download only from this repository's Releases or the successful Actions artifact linked above, and verify the SHA-256 file included with the package. Browser profile data is kept in your Windows user profile, not beside the executable.
 
 ## Graphics and WASM modes
 
@@ -34,7 +34,7 @@ Open **Modes** in the top toolbar.
 | --- | --- | --- |
 | **WASM MODE** | Compiles and runs the project's small WebAssembly test inside Chromium/V8. | Implemented; test result and timing are shown. It does not upscale pages or promise higher frame rates. |
 | **NVIDIA DLSS MODE** | Requests a native DLSS rendering path. | **Not integrated.** The controller reports why and falls back to standard Chromium. An NVIDIA GPU/driver alone is not enough. |
-| **AMD FSR MODE** | Selects the status for the limited FSR1 diagnostic; it does not replace normal page rendering. In the advanced panel, a user may opt in to capture the bundled WebGL2 test scene as a PNG, process it through the native AMD FSR1 EASU + RCAS D3D12 helper, and view a returned preview. | Native synthetic-input WARP regression passed, but the current packaged browser-frame smoke failed and capture-to-FSR processing remains unverified. It is not an arbitrary-page, in-compositor, zero-copy, or real-time upscaler. Standard Chromium remains active for regular pages. |
+| **AMD FSR MODE** | Selects the status for the limited FSR1 diagnostic; it does not replace normal page rendering. In the advanced panel, a user may opt in to capture the bundled WebGL2 test scene as a PNG, process it through the native AMD FSR1 EASU + RCAS D3D12 helper, and view a returned preview. | The packaged three-frame/three-resolution capture-to-FSR path passed on WARP software in CI. This validates only the controlled diagnostic scene, not a physical GPU or arbitrary webpage. It is not an in-compositor, zero-copy, or real-time upscaler. Standard Chromium remains active for regular pages. |
 | **HYBRID MODE** | Applies the automatic native-backend priority only when a compatible, initialized renderer integration is proven. | DLSS is unavailable and the FSR capture helper is manual-only, so normal pages safely stay on standard Chromium; WASM remains a separate runtime diagnostic. |
 | **STANDARD MODE** | Uses the normal Chromium renderer; Chromium/the driver chooses hardware or software compositing. | Implemented and active by default. |
 

@@ -3,27 +3,30 @@ TRI-CORE BROWSER — CHECKED-IN BUILD STATUS
 Report date (UTC): 2026-10-11
 Repository: https://github.com/shuvrajeetkamila/Tri-Core-Browser
 Source branch: arena/66abfdc9-tri-core-browser
-App-source commit with Windows CI evidence: b7e844fca45cd64c494d9862b3e19e153c283ed7
+App/source commit with successful Windows CI: eee56b78a5259429b4e5d7be3b73adf21ec99365
 
-Local build host: Linux x86_64 (Arena workspace)
+Local verification (Linux):
 Node.js: 22.22.3
 npm: 10.9.8
 Electron: 44.7.0
 Electron Builder: 26.17.0
 Renderer build: PASS (`npm run build`)
 Automated unit tests: PASS (37/37)
+JavaScript syntax checks: PASS
+GitHub workflow YAML parsing: PASS
 Full locked dependency audit: PASS at the high/critical threshold (8 moderate findings; 0 high or critical on 2026-10-11).
 
-Windows native D3D12 helper CMake/MSVC build: PASS in [Windows WARP workflow run 38146013763](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38146013763).
-Native synthetic-input AMD FSR1 EASU/RCAS processing: PASS on D3D12 WARP software in that run; this is component regression coverage only, not physical GPU or browser-frame evidence.
-Linux renderer, tests, and dependency checks: PASS in [run 38146013775](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38146013775).
-Packaged Windows executable validation: PASS; the workflow confirmed the executable exists and exceeds 30,000,000 bytes. Exact file size is not available here.
-Packaged-app smoke: FAIL (PowerShell step exit code 1) in [run 38146013775](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38146013775). The exact internal smoke error remains unknown because raw log/artifact downloads failed in this environment. Portable distribution assembly/upload was skipped, so no tested Windows ZIP/executable was published for this source.
-Packaged browser-frame FSR path: NOT VERIFIED. The smoke diagnostics artifact was uploaded (596 bytes), but its signed download could not be retrieved; no passing browser-PNG → FSR → preview evidence is accepted.
+Windows packaged build and tests: PASS in [Actions run 38149140832](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38149140832). The Windows x64 executable presence/size check, packaged browser smoke, portable distribution assembly, and artifact upload all passed. The workflow's executable threshold is greater than 30,000,000 bytes; the exact executable and ZIP byte counts are in the generated reports inside the artifact and were not retrieved separately here.
+
+Packaged browser-frame evidence: the gated smoke validated three distinct changing frames, three capture resolutions, Electron `WebContents.capturePage()` PNG inputs, AMD FSR 1.0.2 EASU + RCAS processing through a separate D3D12 helper on WARP, per-frame reports, input/output/reference PNGs, and distinct bilinear-reference paths. WARP is a software adapter; physical-GPU validation remains NOT RUN. This is a bounded test-scene screenshot/readback preview, not zero-copy, real-time, general-page, or performance-improvement evidence.
+
+Native synthetic-input FSR1 WARP regression: PASS in [run 38149140851](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38149140851); software-only component evidence.
+
+Uploaded `TriCoreBrowser-Windows-x64` GitHub Actions artifact: PASS; the artifact API reported an archive size of 223,507,513 bytes. This aggregate is not the executable's or portable ZIP's individual size. The run also uploaded smoke evidence and reports. A public GitHub Release was NOT published; the opt-in release workflow is skipped on ordinary pushes.
+
 Physical GPU / AMD-vendor hardware validation: NOT RUN. WARP is software.
-
-This file is a checked-in source/status summary, not a Windows build artifact. The current per-build report, executable path/size, captures, and per-frame reports can only be generated and distributed after the packaged smoke gate passes. See docs/TEST_RESULTS.md and docs/BUILD_WINDOWS.md.
-
 DLSS / Frame Generation: NOT IMPLEMENTED / NOT TESTED. No authorized NVIDIA Streamline feature runtime is shipped.
-FSR: Licensed AMD FSR 1.0.2 shader inputs and a D3D12 harness are implemented; the isolated native synthetic WARP regression passed, but packaged browser-capture processing is not verified.
-WASM: controlled module passes automated Node/V8 tests; packaged Chromium runtime results are recorded per commit in Windows smoke evidence.
+WASM: controlled Chromium/V8 diagnostic compiles and verifies `add(19,23)=42`; it is not an upscaler.
+Ordinary webpages: standard Chromium rendering; no page upscaling is enabled.
+
+This file is a checked-in source/status summary, not the generated Windows build report. The exact per-build executable/ZIP sizes, checksums, captures and native reports are in the successful Windows artifact. Build outputs are ignored by Git and are not committed to source history.

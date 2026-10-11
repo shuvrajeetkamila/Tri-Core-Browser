@@ -1,12 +1,14 @@
 TRI-CORE BROWSER — SIZE AUDIT STATUS
 
 Report date (UTC): 2026-10-11
-App-source commit with Windows CI evidence: b7e844fca45cd64c494d9862b3e19e153c283ed7
+App/source commit with successful Windows CI: eee56b78a5259429b4e5d7be3b73adf21ec99365
+Windows Actions run: https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38149140832
 
-Windows x64 executable: current CI confirmed that `release/TriCoreBrowser.exe` exists and exceeds the 30,000,000-byte minimum. The exact byte count and downloadable file are unavailable because the later packaged-app smoke failed and package upload was skipped.
-Portable Windows package: not assembled or uploaded because the packaged-app smoke gate failed; size not measured.
-Installer: not built; size not measured.
+Windows x64 executable: PASS. CI confirmed `release/TriCoreBrowser.exe` exists and exceeds the 30,000,000-byte minimum. Its exact size is recorded in the generated `BUILD_REPORT.txt`/`SIZE_AUDIT.txt` inside the artifact; those individual report values were not retrieved separately here.
+Portable Windows distribution: PASS. The executable, portable ZIP, smoke evidence and reports were assembled and uploaded in the `TriCoreBrowser-Windows-x64` Actions artifact. GitHub reported an artifact archive size of 223,507,513 bytes; this aggregate archive size is not the executable or portable ZIP's individual size.
+Installer: not built or tested; size not measured.
+Public GitHub Release: not published. The current successful output is an Actions artifact; the release workflow requires explicit opt-in.
 
-No placeholder binary is committed. The Windows workflow is intended to validate the executable and, only after the full packaged browser-frame smoke succeeds, run scripts/package-windows.ps1 to measure the executable, complete portable staging directory, and final ZIP. Those exact byte counts and checksums belong in the generated per-build reports; they are not inferred from a successful `npm run package:win` command alone.
+No placeholder binary is committed. Exact executable/ZIP sizes and SHA-256 checksums belong in the generated per-build reports, not inferred from a successful build command or the aggregate Actions artifact size.
 
-Runtime packaging design: one self-extracting portable Electron/Chromium executable; the release ZIP adds documentation, source/module notes, AMD attribution, and third-party license files. No separately installed Chrome/Edge runtime is required. Build outputs are ignored by Git and not committed to source history.
+Runtime packaging design: one self-extracting portable Electron/Chromium executable; the release ZIP adds documentation, source/module notes, AMD attribution, third-party license files, and verified bundled-scene FSR smoke evidence. No separately installed Chrome/Edge runtime is required. Build outputs are ignored by Git and not committed to source history.

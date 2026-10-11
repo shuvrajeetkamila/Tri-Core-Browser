@@ -4,7 +4,7 @@
 **Repository:** `shuvrajeetkamila/Tri-Core-Browser`
 **Working branch:** `arena/66abfdc9-tri-core-browser` (session branch; do not switch)
 **Audited starting commit:** `e27cb207d6be86a346420901a979b831cf849c00` (`Create Initial Release`)
-**Current work:** the retained Electron browser source, graphics diagnostic and supporting tests/docs are implemented on the session branch. CI on app-source commit `b7e844fca45cd64c494d9862b3e19e153c283ed7` passed Linux tests/build and the native D3D12/WARP regression; Windows executable presence/size validation passed, but packaged browser smoke failed. No browser-frame proof or portable release is accepted. See [`docs/TEST_RESULTS.md`](TEST_RESULTS.md), [build run 38146013775](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38146013775), and [native WARP run 38146013763](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38146013763).
+**Current work:** the retained Electron browser source, graphics diagnostic and supporting tests/docs are implemented on the session branch. App/source commit `eee56b78a5259429b4e5d7be3b73adf21ec99365` passed Linux tests/build/audit, the native D3D12/WARP regression, and the packaged Windows workflow, including the bounded browser-capture-to-FSR smoke, portable assembly and artifact upload. This confirms only the bundled WebGL2 test scene on WARP software; no physical-GPU, arbitrary-page, performance, DLSS, or public-release claim is made. See [`docs/TEST_RESULTS.md`](TEST_RESULTS.md), [package run 38149140832](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38149140832), and [native WARP run 38149140851](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38149140851).
 
 ## Technical audit and decision
 
@@ -40,21 +40,21 @@ Retain all three cores, navigation, tabs, profile, bookmarks/history, downloads,
 - Keep detection, D3D12 feature compatibility, helper initialization, active processing, processed frame counts, failure and unsupported states distinct. Vendor identity does not imply support.
 - Auto priority is DLSS → FSR → WASM when an integration is actually compatible and initialized. The FSR screenshot helper is manual-only and not eligible to replace ordinary page rendering; WASM stays runtime-only, not image upscaling.
 - Unsupported/failed native requests keep standard Chromium active. The semantic keyboard-operable performance disclosure persists collapsed state; collapse only affects UI/layout, not browser processing.
-- Current local tests pass **37/37**, the renderer builds, and syntax/workflow checks pass. Windows CI on app-source commit `b7e844f` passed the native helper/WARP regression and executable presence/size check, but failed the separate packaged-browser smoke; only the native synthetic result is accepted as component evidence.
+- Current local tests pass **37/37**, the renderer builds, and syntax/workflow checks pass. Windows CI on app/source commit `eee56b7` passed the native helper/WARP regression, executable validation, bundled-scene browser-frame smoke, portable assembly and Actions artifact upload. The FSR helper remains manual/test-scene-only, not part of normal-page rendering.
 
 ### Stage 2 — Native FSR1 D3D12 harness (**source implemented; current Windows CMake/MSVC + WARP component regression passed**)
 
 - Keep synthetic regression support and add explicit app-owned PNG input/output/report flags.
 - Enumerate adapters and report model/vendor/device IDs, non-software/WARP classification, D3D12 API and format/shader capabilities, FSR initialization/processing, input/output dimensions, processed frames, GPU timestamp when available, CPU fence/native timings, visual sanity metrics and capture/report paths.
 - Link WIC/OLE support and statically link the MSVC runtime for the standalone helper. Package pinned AMD shader sources/notices beside the executable.
-- The code is not compiled on the Linux Arena host. Windows CI on app-source commit `b7e844f` compiled the helper and processed the isolated synthetic regression on WARP ([run 38146013763](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38146013763)). This is software-only component evidence, not physical-GPU or browser-frame validation.
+- The code is not compiled on the Linux Arena host. Windows CI on app/source commit `eee56b7` compiled the helper and processed the isolated synthetic regression on WARP ([run 38149140851](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38149140851)). This is software-only component evidence; it is separate from the packaged browser-frame test and does not validate physical-GPU support.
 
-### Stage 3 — Browser-frame diagnostic (**source implemented; current packaged Windows smoke failed; browser-frame acceptance pending**)
+### Stage 3 — Browser-frame diagnostic (**implemented; bundled-scene WARP smoke passed**)
 
 - Bundle a reproducible animated WebGL2 scene with changing visual frames, frame counter, no network assets, and responsive resolution.
 - Capture only the exact bundled scene while its `WebContentsView` is active, visible and not loading. Revalidate context around capture/native processing, bound dimensions/bytes, invoke the helper with fixed `execFile` arguments (no shell), and retain standard rendering as fallback.
 - Return input/output PNG previews; record hashes, capture/helper/native/GPU timings when available, dimensions/resolutions and real frame count. This is not continuous/zero-copy processing.
-- The mandatory packaged Windows smoke ran on app-source commit `b7e844f`. The executable presence/size check passed, but the separate smoke step failed with exit code 1; the internal cause is unknown because raw logs/artifact downloads are unavailable in this environment. The diagnostic summary was uploaded. **No three-frame/three-resolution browser-to-FSR evidence was accepted.** Inspect the signed-in Actions artifact/summary and pass the full gate before a portable package is assembled.
+- The mandatory packaged Windows smoke passed on app/source commit `eee56b7`. CI validated three changing Electron `capturePage()` PNG frames from the app-owned bundled WebGL2 scene at three resolutions, processed on D3D12 WARP, with per-frame native reports and input/output/reference PNGs. Portable assembly and artifact upload also passed; the `TriCoreBrowser-Windows-x64` artifact is attached to [run 38149140832](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38149140832). This is WARP software evidence only, not physical-GPU or arbitrary-page validation.
 
 ### Stage 4 — DLSS / Streamline (**blocked**)
 
@@ -74,8 +74,8 @@ On a real Windows device, run `--list-adapters`, then `--hardware --adapter-inde
 | --- | --- | --- |
 | Chromium WebAssembly | Tested / working runtime diagnostic | Real compile/instantiate and `19 + 23 = 42` test; never upscaling. |
 | Standard Chromium browsing and safe fallback | Tested / working | Browser remains the effective renderer for ordinary pages and unsupported/failed requests. |
-| Bundled WebGL2 scene → `capturePage()` PNG → FSR1 preview | Implemented in source; current smoke failed / processing unverified | On app-source commit `b7e844f`, executable validation passed but packaged smoke failed; no accepted three-frame/three-resolution WARP evidence is available. Inspect diagnostics from [run 38146013775](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38146013775) and rerun. |
-| Native synthetic-pattern FSR1 | Component regression passed on WARP | Current app-source commit `b7e844f` built the helper and passed the isolated WARP test ([run 38146013763](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38146013763)); software-only, not browser-frame or physical-GPU evidence. |
+| Bundled WebGL2 scene → `capturePage()` PNG → FSR1 preview | Packaged smoke passed on WARP for the bundled scene | App/source commit `eee56b7` passed three changing frames at three capture resolutions with native reports and PNG/reference validation; portable artifact uploaded in [run 38149140832](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38149140832). Software-only; not arbitrary-page or physical-GPU evidence. |
+| Native synthetic-pattern FSR1 | Component regression passed on WARP | App/source commit `eee56b7` built the helper and passed the isolated WARP test ([run 38149140851](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38149140851)); software-only, separate from the browser-frame smoke. |
 | Physical AMD or other GPU | Not run | Requires real hardware, selected adapter and report/capture review. |
 | Arbitrary webpages/games, WebGL/WebGPU, video/DRM/cloud/external apps | Unsupported / architecture-blocked | No supported page-resource/compositor bridge. |
 | NVIDIA DLSS / Frame Generation | Not implemented / not tested | No authorized runtime, controlled native renderer or NVIDIA hardware validation. |
@@ -84,16 +84,17 @@ On a real Windows device, run `--list-adapters`, then `--hardware --adapter-inde
 
 | Check | Current status |
 | --- | --- |
-| `npm test` | **PASS — 37/37** after the latest source edits. |
-| `npm run build` | **PASS** after the latest renderer edits. |
-| JavaScript syntax checks | **PASS** for main, preload, bridge, renderer, preferences, and graphics controller. |
-| GitHub workflow / package JSON syntax | **PASS** — `js-yaml` parsed all three workflow files; package JSON parsed. PowerShell script syntax remains unverified on this Linux host. |
-| `git diff --check` | **PASS** after removing trailing Markdown whitespace. |
+| `npm test` | **PASS — 37/37**. |
+| `npm run build` | **PASS**; Vite production renderer build. |
+| JavaScript syntax checks | **PASS** for Electron main/bridge, renderer, tests and scripts. |
+| GitHub workflow / package JSON syntax | **PASS** — `js-yaml` parsed all three workflow files; package JSON parsed. Windows CI executed the PowerShell package workflow successfully. |
+| `git diff --check` | **PASS**. |
 | `npm audit --audit-level=high` | **PASS (threshold)** — 8 moderate, 0 high, 0 critical findings; no forced breaking fix. |
-| CMake/MSVC/native helper build | **PASS on app-source commit `b7e844f`** in Windows Actions. |
-| Isolated synthetic-input FSR1 on WARP | **PASS on app-source commit `b7e844f`**; software component regression only. |
-| Packaged executable presence/size check | **PASS on app-source commit `b7e844f`**; executable was confirmed over the 30,000,000-byte minimum. Exact size was not retrieved. |
-| Packaged Windows `capturePage()` → FSR1 WARP frames | **Smoke step failed on app-source commit `b7e844f`; no accepted browser-frame proof.** Diagnostics artifact was uploaded, but its contents were unavailable in this environment. |
-| Physical GPU/AMD vendor, DLSS, arbitrary-page upscaling | Not run / not implemented as scoped above. |
+| CMake/MSVC/native helper build | **PASS on app/source commit `eee56b7`** in Windows Actions. |
+| Isolated synthetic-input FSR1 on WARP | **PASS on app/source commit `eee56b7`**; software component regression only. |
+| Packaged executable presence/size check | **PASS on app/source commit `eee56b7`**; executable exceeded the 30,000,000-byte minimum. Exact value is in the artifact report. |
+| Packaged Windows `capturePage()` → FSR1 WARP frames | **PASS on app/source commit `eee56b7` for the bundled WebGL2 test scene only.** Three changing frames, three resolutions, WARP reports, PNGs and reference paths passed validation in [run 38149140832](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38149140832). |
+| Portable distribution and Actions artifact | **PASS**; `TriCoreBrowser-Windows-x64` uploaded in run 38149140832. No public GitHub Release was published. |
+| Physical GPU/AMD vendor, DLSS, arbitrary-page upscaling | **NOT RUN / NOT IMPLEMENTED / UNSUPPORTED** as scoped above. |
 
 Update this plan only with results tied to the exact current source commit. Do not promote earlier-commit WARP/packaging evidence to current-source acceptance.

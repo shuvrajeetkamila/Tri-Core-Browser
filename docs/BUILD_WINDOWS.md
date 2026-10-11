@@ -22,8 +22,9 @@
    New-Item -ItemType Directory -Path $fsrSmokeOut -Force | Out-Null
    $env:TRICORE_REQUIRE_FSR_BROWSER_SMOKE = 'PASS'
    $env:TRICORE_FSR_SMOKE_OUT = $fsrSmokeOut
-   $smokeLog = Join-Path $env:RUNNER_TEMP 'tricore-smoke.stdout.txt'
-   & .\release\TriCoreBrowser.exe --smoke-test *> $smokeLog
+   $env:TRICORE_SMOKE_LOG = Join-Path $env:RUNNER_TEMP 'tricore-smoke-main.log.txt'
+   $smokeStdout = Join-Path $env:RUNNER_TEMP 'tricore-smoke.stdout.txt'
+   & .\release\TriCoreBrowser.exe --smoke-test *> $smokeStdout
    if ($LASTEXITCODE -ne 0) { throw "Smoke test failed with exit code $LASTEXITCODE" }
    $summary = Get-Content (Join-Path $fsrSmokeOut 'browser-frame-smoke-summary.json') -Raw | ConvertFrom-Json
    if ($summary.status -ne 'PASS' -or $summary.softwareAdapter -ne $true -or $summary.frameCount -ne 3 -or $summary.distinctInputFrames -ne 3 -or $summary.distinctInputResolutions -ne 3) { throw 'Browser-frame FSR1 WARP smoke evidence did not pass.' }
@@ -46,6 +47,8 @@
 4. Launches the packaged executable with `--smoke-test` and requires exit code 0. The required gate opens the real bundled WebGL2 scene in a sandboxed `WebContentsView`, captures three changing frames at three view resolutions through `capturePage()` PNG, processes each with the native FSR1 helper on WARP, validates reports/PNG signatures/dimensions, and preserves captures. WARP is software-only; physical-GPU validation remains `NOT RUN`.
 5. Uses `scripts/package-windows.ps1` to assemble the portable ZIP, controlled-scene evidence captures/reports, build/size reports, and SHA-256 checksums.
 6. Uploads the executable, complete ZIP, smoke captures/reports, and dependency reports as the `TriCoreBrowser-Windows-x64` workflow artifact (30-day retention).
+
+**Verified example:** app/source commit `eee56b7` passed the full Windows and Linux workflow in [run 38149140832](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38149140832). Its portable artifact is available from that run; this does not mean a public GitHub Release was published. The smoke validation remains specific to the bundled scene on WARP software.
 
 The full npm audit report is retained as a CI artifact. The app has no declared npm production dependencies; Electron itself is a dev dependency used to build the bundled runtime, so `npm audit --omit=dev` would exclude it and is not used as the security gate. CI audits the complete lockfile, including Electron and electron-builder. The 2026-10-11 audit reported 8 moderate findings and 0 high/critical findings; the full report/tree are uploaded and the gate fails on high or critical findings.
 
