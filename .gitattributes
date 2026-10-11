@@ -1,0 +1,2 @@
+# Preserve exact upstream AMD shader/header bytes and notices, including their original whitespace.
+native/fsr1-poc/third_party/amd/** whitespace=-blank-at-eol,-blank-at-eof

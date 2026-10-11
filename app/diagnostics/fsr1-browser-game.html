@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none';">
+  <title>TRI-CORE FSR1 WebGL frame test</title>
+  <link rel="stylesheet" href="fsr1-browser-game.css">
+  <script defer src="fsr1-browser-game.js"></script>
+</head>
+<body>
+  <header class="game-header">
+    <div>
+      <span class="eyebrow">LOCAL GRAPHICS DIAGNOSTIC</span>
+      <h1>Orbital Runner</h1>
+    </div>
+    <div class="render-badge"><span class="status-dot"></span><span id="renderer-status">Starting WebGL2…</span></div>
+  </header>
+  <main>
+    <canvas id="game-canvas" aria-label="Animated WebGL2 orbital runner test scene"></canvas>
+    <div class="game-hud" aria-live="polite">
+      <div><span class="hud-label">FRAME</span><strong id="frame-count">0</strong></div>
+      <div><span class="hud-label">SCENE</span><strong>ORBITAL-07</strong></div>
+      <div><span class="hud-label">INPUT</span><strong>CHROMIUM WEBGL2</strong></div>
+    </div>
+    <div id="scene-error" class="scene-error" hidden></div>
+  </main>
+  <footer>
+    <span>Animated, changing browser-rendered frames · no network assets</span>
+    <span>Capture runs only when explicitly requested from the graphics panel</span>
+  </footer>
+</body>
+</html>

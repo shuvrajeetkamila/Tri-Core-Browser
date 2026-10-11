@@ -1,0 +1,22 @@
+TRI-CORE BROWSER — CHECKED-IN BUILD STATUS
+
+Report date (UTC): 2026-10-11
+Repository: https://github.com/shuvrajeetkamila/Tri-Core-Browser
+Source branch: arena/66abfdc9-tri-core-browser
+Source commit: see the Git revision and the commit-specific CI build report
+
+Local build host: Linux x86_64 (Arena workspace)
+Node.js: 22.22.3
+npm: 10.9.8
+Electron: 44.7.0 (Chromium version is recorded by the Windows app diagnostics and CI report)
+Electron Builder: 26.17.0
+Renderer build: PASS (`npm run build`)
+Automated unit tests: PASS (15 tests)
+Full locked dependency audit: PASS (8 moderate findings in the 2026-10-11 report; 0 high or critical). This includes the Electron package and build tooling; see the attached dependency audit.
+Windows Release build in this local host: BLOCKED (no Windows compiler/SDK or Windows runtime available)
+
+IMPORTANT: This checked-in status summary is not proof that a Windows executable exists. The exact per-build source SHA, runner/compiler/runtime versions, packaged-app smoke-test output, executable path, result, and size are written by scripts/package-windows.ps1 in the Windows GitHub Actions job. A downloadable executable may only be claimed after that job succeeds; the report is then shipped beside the tested executable and portable ZIP. See docs/BUILD_WINDOWS.md and docs/TEST_RESULTS.md.
+
+DLSS: NOT IMPLEMENTED / NOT TESTED. No NVIDIA Streamline integration or runtime is shipped.
+FSR: NOT IMPLEMENTED / NOT TESTED. No AMD FidelityFX integration is shipped.
+WASM: controlled module passes automated Node/V8 tests; packaged Windows Chromium results are recorded per commit in the Windows smoke-test report.
