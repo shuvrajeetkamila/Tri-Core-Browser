@@ -13,6 +13,7 @@ test('Windows build and release gates validate distinct bilinear references and 
     assert.ok(workflow.includes('tricore-smoke-diagnostics.md'), `${workflowName} must retain a readable smoke summary`);
     assert.ok(workflow.includes('tricore-smoke-main.log.txt'), `${workflowName} must collect the packaged app's own smoke log`);
     assert.ok(workflow.includes('TRICORE_SMOKE_LOG'), `${workflowName} must tell the packaged app where to write smoke diagnostics`);
+    assert.ok(workflow.includes('[workflow] Packaged smoke validation failed at line'), `${workflowName} must append PowerShell assertion failures to the smoke diagnostic log`);
     assert.ok(workflow.includes('$env:GITHUB_STEP_SUMMARY'), `${workflowName} must expose smoke details in the Actions summary`);
     assert.ok(workflow.includes('::error title=Packaged browser smoke diagnostics::'), `${workflowName} must expose smoke details as a check annotation`);
     assert.ok(workflow.includes('id: packaged_executable'), `${workflowName} must report executable validation separately`);

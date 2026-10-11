@@ -73,6 +73,7 @@ jobs:
           $env:TRICORE_REQUIRE_FSR_BROWSER_SMOKE = 'PASS'
           $env:TRICORE_FSR_SMOKE_OUT = $fsrSmokeOut
           $env:TRICORE_SMOKE_LOG = $smokeLog
+          try {
           $process = Start-Process -FilePath $exe -ArgumentList @('--smoke-test') -NoNewWindow -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
           if (-not $process.WaitForExit(300000)) {
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
@@ -83,6 +84,7 @@ jobs:
           if (Test-Path $stdout) { Get-Content $stdout }
           if (Test-Path $stderr) { Get-Content $stderr }
           if (Test-Path $smokeLog) { Get-Content $smokeLog }
+          Add-Content -Path $smokeLog -Value "[workflow] Packaged process exit code: $($process.ExitCode)" -Encoding utf8
           if ($process.ExitCode -ne 0) { throw "Packaged browser smoke test exited with $($process.ExitCode)." }
           $smokeText = if (Test-Path $smokeLog) { Get-Content $smokeLog -Raw } else { '' }
           if (-not $smokeText.Contains('[smoke] Real WebContentsView WebGL2 capture')) { throw 'Packaged smoke log does not contain browser-frame capture-to-FSR evidence.' }
@@ -111,6 +113,12 @@ jobs:
           Add-Content -Path $env:GITHUB_ENV -Value 'TRICORE_FSR_BROWSER_SMOKE=PASS' -Encoding utf8
           Add-Content -Path $env:GITHUB_ENV -Value "TRICORE_FSR_SMOKE_OUT=$fsrSmokeOut" -Encoding utf8
           Write-Host "PASS: $($exeItem.Length) byte Windows x64 portable executable; 3 distinct changing WebContentsView capturePage PNG frames at 3 resolutions processed by the FSR1 D3D12 helper on WARP; physical-GPU validation remains NOT RUN."
+          } catch {
+            $workflowFailure = "[workflow] Packaged smoke validation failed at line $($_.InvocationInfo.ScriptLineNumber): $($_.Exception.Message)`n$($_.ScriptStackTrace)"
+            try { Add-Content -Path $smokeLog -Value $workflowFailure -Encoding utf8 } catch {}
+            Write-Host $workflowFailure
+            throw
+          }
       - name: Surface packaged smoke diagnostics
         if: failure() && (steps.packaged_executable.outcome == 'failure' || steps.packaged_smoke.outcome == 'failure')
         shell: pwsh
