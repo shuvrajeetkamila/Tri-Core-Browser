@@ -119,7 +119,7 @@ jobs:
           $referencePaths = @()
           foreach ($frame in $summary.frames) {
             if ($frame.nativeReport.status -ne 'PASS' -or $frame.nativeReport.inputSource -ne 'Electron WebContents.capturePage() PNG' -or $frame.nativeReport.softwareAdapter -ne $true) { throw 'A per-frame report did not validate the screenshot-to-FSR WARP path.' }
-            if ([string]$frame.nativeReport.bilinearReferencePath -ne [string]$frame.referencePath) { throw 'A per-frame report did not match its own bilinear-reference PNG path.' }
+            if ([System.IO.Path]::GetFullPath([string]$frame.nativeReport.bilinearReferencePath) -ne [System.IO.Path]::GetFullPath([string]$frame.referencePath)) { throw 'A per-frame report did not match its own bilinear-reference PNG path.' }
             $referencePaths += [System.IO.Path]::GetFullPath([string]$frame.referencePath)
             if (-not (Test-Path $frame.inputPath -PathType Leaf) -or -not (Test-Path $frame.outputPath -PathType Leaf) -or -not (Test-Path $frame.referencePath -PathType Leaf) -or -not (Test-Path $frame.reportPath -PathType Leaf)) { throw 'A browser capture, processed PNG, bilinear reference, or per-frame report is missing.' }
             foreach ($imagePath in @($frame.inputPath, $frame.outputPath, $frame.referencePath)) {

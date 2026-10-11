@@ -8,6 +8,7 @@ test('Windows build and release gates validate distinct bilinear references and 
   for (const workflowName of workflowNames) {
     const workflow = fs.readFileSync(new URL(`../.github/workflows/${workflowName}`, import.meta.url), 'utf8');
     assert.ok(workflow.includes('$frame.nativeReport.bilinearReferencePath'), `${workflowName} must tie each reference PNG to its native report`);
+    assert.ok(workflow.includes('[System.IO.Path]::GetFullPath([string]$frame.nativeReport.bilinearReferencePath) -ne [System.IO.Path]::GetFullPath([string]$frame.referencePath)'), `${workflowName} must normalize Windows slash direction before comparing reference paths`);
     assert.ok(workflow.includes('@($frame.inputPath, $frame.outputPath, $frame.referencePath)'), `${workflowName} must validate each input, FSR output, and reference PNG`);
     assert.ok(workflow.includes('$referencePaths | Sort-Object -Unique'), `${workflowName} must require a distinct reference path per frame`);
     assert.ok(workflow.includes('tricore-smoke-diagnostics.md'), `${workflowName} must retain a readable smoke summary`);
@@ -20,4 +21,7 @@ test('Windows build and release gates validate distinct bilinear references and 
     assert.ok(workflow.includes('id: packaged_smoke'), `${workflowName} must report browser smoke separately`);
     assert.ok(workflow.includes('steps.packaged_executable.outcome == \'failure\''), `${workflowName} must surface diagnostics when executable validation fails`);
   }
+
+  const packageScript = fs.readFileSync(new URL('../scripts/package-windows.ps1', import.meta.url), 'utf8');
+  assert.ok(packageScript.includes('[System.IO.Path]::GetFullPath([string]$frame.nativeReport.bilinearReferencePath) -ne [System.IO.Path]::GetFullPath([string]$frame.referencePath)'), 'the packaging gate must normalize Windows slash direction before comparing reference paths');
 });

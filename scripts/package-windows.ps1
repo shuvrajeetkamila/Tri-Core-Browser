@@ -48,7 +48,7 @@ $referencePaths = @()
 foreach ($frame in $fsrSummary.frames) {
   if ($frame.nativeReport.status -ne 'PASS' -or $frame.nativeReport.inputSource -ne 'Electron WebContents.capturePage() PNG'
       -or $frame.nativeReport.softwareAdapter -ne $true -or $frame.nativeReport.processingStatus -ne 'PASS'
-      -or [string]$frame.nativeReport.bilinearReferencePath -ne [string]$frame.referencePath) {
+      -or [System.IO.Path]::GetFullPath([string]$frame.nativeReport.bilinearReferencePath) -ne [System.IO.Path]::GetFullPath([string]$frame.referencePath)) {
     throw 'A per-frame native report does not validate the capturePage PNG to FSR1 WARP path and its bilinear-reference path.'
   }
   $referencePaths += [System.IO.Path]::GetFullPath([string]$frame.referencePath)
