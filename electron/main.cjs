@@ -34,11 +34,12 @@ const DEFAULT_HOME_URL = 'https://duckduckgo.com/';
 const WEB_PROTOCOLS = new Set(['http:', 'https:']);
 const FSR_TEST_SCENE_PATH = path.join(__dirname, '..', 'app', 'diagnostics', 'fsr1-browser-game.html');
 const FSR_TEST_SCENE_URL = pathToFileURL(FSR_TEST_SCENE_PATH).href;
-const MAX_FSR_PREVIEW_BYTES = 12 * 1024 * 1024;
 
 function isBundledFsrTestSceneUrl(value) {
   return isFileUrlForPath(String(value || ''), FSR_TEST_SCENE_PATH);
 }
+
+const MAX_FSR_PREVIEW_BYTES = 12 * 1024 * 1024;
 const coreTabs = Array.from({ length: CORE_COUNT }, () => []);
 const activeTabs = Array.from({ length: CORE_COUNT }, () => null);
 const layoutBounds = Array.from({ length: CORE_COUNT }, () => ({ x: 0, y: 0, width: 0, height: 0 }));
