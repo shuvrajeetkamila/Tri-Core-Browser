@@ -1,0 +1,137 @@
+name: Build and publish Windows prerelease
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Prerelease tag (for example v1.0.0-alpha.1)'
+        required: true
+        type: string
+        default: v1.0.0-alpha.1
+      publish:
+        description: 'Publish this tested build as a GitHub prerelease'
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  windows-release-build:
+    name: Rebuild and smoke-test Windows x64
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out selected source ref
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22.22.3
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Run automated tests
+        run: npm test
+      - name: Audit shipped dependencies
+        run: npm audit --omit=dev
+      - name: Record full dependency audit
+        run: node scripts/dependency-audit.cjs
+      - name: Build Windows x64 portable executable
+        run: npm run package:win
+      - name: Verify executable and run packaged-app smoke test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Join-Path $PWD 'release/TriCoreBrowser.exe'
+          if (-not (Test-Path $exe -PathType Leaf)) { throw 'TriCoreBrowser.exe was not produced.' }
+          $exeItem = Get-Item $exe
+          if ($exeItem.Length -lt 30000000) { throw "Executable is unexpectedly small ($($exeItem.Length) bytes); refusing to upload a placeholder." }
+          $stdout = Join-Path $env:RUNNER_TEMP 'tricore-smoke.stdout.txt'
+          $stderr = Join-Path $env:RUNNER_TEMP 'tricore-smoke.stderr.txt'
+          $process = Start-Process -FilePath $exe -ArgumentList @('--smoke-test') -NoNewWindow -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          if (-not $process.WaitForExit(150000)) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            throw 'Packaged browser smoke test timed out after 150 seconds.'
+          }
+          $process.Refresh()
+          if (Test-Path $stdout) { Get-Content $stdout }
+          if (Test-Path $stderr) { Get-Content $stderr }
+          if ($process.ExitCode -ne 0) { throw "Packaged browser smoke test exited with $($process.ExitCode)." }
+          Add-Content -Path $env:GITHUB_ENV -Value 'TRICORE_SMOKE_TEST=PASS' -Encoding utf8
+          Write-Host "PASS: $($exeItem.Length) byte Windows x64 portable executable; packaged smoke test exited 0."
+      - name: Assemble portable distribution and reports
+        shell: pwsh
+        run: '& .\scripts\package-windows.ps1'
+      - name: Upload tested release package
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: TriCoreBrowser-Windows-x64-release
+          path: |
+            release/TriCoreBrowser.exe
+            release/TriCoreBrowser-Windows-x64-portable.zip
+            release/BUILD_REPORT.txt
+            release/SIZE_AUDIT.txt
+            release/SHA256SUMS.txt
+            dependency-audit.json
+            dependency-tree.json
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-prerelease:
+    name: Publish tested GitHub prerelease
+    if: ${{ inputs.publish }}
+    needs: windows-release-build
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Download this run's tested Windows package
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          name: TriCoreBrowser-Windows-x64-release
+          path: release
+      - name: Validate assets and publish prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[0-9]+$ ]]; then
+            echo 'This build is experimental. Use a prerelease tag such as v1.0.0-alpha.1; stable releases are disabled.' >&2
+            exit 1
+          fi
+          for asset in \
+            release/TriCoreBrowser.exe \
+            release/TriCoreBrowser-Windows-x64-portable.zip \
+            release/BUILD_REPORT.txt \
+            release/SIZE_AUDIT.txt \
+            release/SHA256SUMS.txt; do
+            if [[ ! -s "$asset" ]]; then echo "Required release asset is missing or empty: $asset" >&2; exit 1; fi
+          done
+          grep -q "$GITHUB_SHA" release/BUILD_REPORT.txt
+          cat > "$RUNNER_TEMP/release-notes.md" <<'EOF'
+          ## Tri-Core Browser experimental Windows build
+
+          This prerelease contains the tested portable Windows x64 Electron/Chromium browser and its supporting documentation. It loads real websites and includes an executed WebAssembly diagnostic.
+
+          **DLSS and AMD FSR are not integrated.** Their controls report this accurately and retain standard Chromium rendering. No universal webpage upscaling or performance improvement is claimed.
+
+          The package is unsigned. Review `BUILD_REPORT.txt`, `SIZE_AUDIT.txt`, and `SHA256SUMS.txt` attached to this release.
+          EOF
+          gh --version
+          gh release create "$RELEASE_TAG" \
+            release/TriCoreBrowser.exe \
+            release/TriCoreBrowser-Windows-x64-portable.zip \
+            release/BUILD_REPORT.txt \
+            release/SIZE_AUDIT.txt \
+            release/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Tri-Core Browser $RELEASE_TAG" \
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
+            --prerelease

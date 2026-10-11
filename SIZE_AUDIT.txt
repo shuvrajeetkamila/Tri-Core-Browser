@@ -1,0 +1,11 @@
+TRI-CORE BROWSER — SIZE AUDIT STATUS
+
+Report date (UTC): 2026-10-11
+
+Windows x64 executable: NOT AVAILABLE IN THE LINUX WORKSPACE; size not measured.
+Portable Windows package: NOT AVAILABLE IN THE LINUX WORKSPACE; size not measured.
+Installer: not built; size not measured.
+
+No placeholder binary is committed. The Windows GitHub Actions job verifies that release/TriCoreBrowser.exe exists and exceeds a 30,000,000-byte minimum, then scripts/package-windows.ps1 measures the executable, the complete portable staging directory, and the final ZIP. The exact byte counts are written to the generated SIZE_AUDIT.txt attached to the workflow artifact and release only after the packaged app passes its smoke test.
+
+Runtime packaging design: one self-extracting portable Electron/Chromium executable; the release ZIP adds documentation, source/module notes, and third-party license files. No separately installed Chrome/Edge runtime is required. Build outputs are ignored by Git and not committed to source history.

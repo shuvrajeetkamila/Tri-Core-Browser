@@ -1,0 +1,30 @@
+TRI-CORE BROWSER — THIRD-PARTY NOTICES
+
+Project source and original UI assets
+-------------------------------------
+Copyright (c) 2026 Tri-Core Browser contributors.
+Licensed under the MIT License. See LICENSE.
+
+Electron and the bundled Chromium runtime
+-----------------------------------------
+The Windows application is packaged with Electron 44.7.0 and its Chromium/V8 runtime. Electron and Chromium include third-party components and notices. Electron's upstream Electron license and Chromium license manifest are retained by electron-builder in the packaged runtime. The portable ZIP also contains the upstream files under `third-party/LICENSE.electron.txt` and `third-party/LICENSES.chromium.html`.
+
+Upstream project: https://github.com/electron/electron
+Electron license: https://github.com/electron/electron/blob/v44.7.0/LICENSE
+Electron/Chromium release files and bundled license manifest: https://github.com/electron/electron/releases/tag/v44.7.0
+
+Fonts
+-----
+DM Sans Variable is distributed from `@fontsource-variable/dm-sans` 5.3.0.
+Manrope Variable is distributed from `@fontsource-variable/manrope` 5.3.0.
+Both font families are distributed under the SIL Open Font License, Version 1.1. The matching upstream license files are included under `third-party/DM-Sans-LICENSE.txt` and `third-party/Manrope-LICENSE.txt` in the portable ZIP.
+
+Build-only JavaScript tools
+---------------------------
+Vite 8.3.4 and electron-builder 26.17.0, along with their locked transitive packages, are used only to build/test/package the application. Their package licenses and dependency inventory are recorded in `package-lock.json` and the CI `dependency-tree.json` artifact.
+
+Graphics SDKs
+-------------
+No NVIDIA Streamline/DLSS SDK/runtime/plugin, DLSS model or weight file, AMD FidelityFX/FSR SDK, or graphics-driver DLL is bundled. The UI's DLSS/FSR controls report NOT INTEGRATED. No third-party graphics SDK notices are being used to imply that those features are present.
+
+This summary supplements, but does not replace, the upstream license files in the distribution.
