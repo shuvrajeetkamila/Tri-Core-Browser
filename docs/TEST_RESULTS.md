@@ -9,7 +9,7 @@
 | `npm test` | **PASS** | 15 Node tests passed: address parsing, five-mode controller/fallback policy, real WebAssembly compilation/execution and WASM source contract. |
 | `npm run build` | **PASS** | Vite 8.3.4 generated the production renderer (`dist/`). |
 | `node --check electron/main.cjs electron/preload.cjs src/main.js` | **PASS** | Main process, preload, and renderer syntax checks. |
-| `npm audit --omit=dev` | **PASS** | Zero production/runtime package findings; full dev/build dependency report is retained separately by CI. |
+| `npm audit --audit-level=high` plus `node scripts/dependency-audit.cjs` | **PASS** | Full lockfile audit includes Electron and build tools: 8 moderate, 0 high, 0 critical. JSON/tree reports are retained by CI; the gate fails on high or critical findings. |
 | Graphics policy: Standard mode | **PASS** | Controller resolves to Chromium, with no upscaler claimed. |
 | Graphics policy: DLSS/FSR fallback with vendor-like GPU labels | **PASS** | Tests confirm a detected GPU never activates an absent integration and the effective path remains Standard. |
 | Hybrid policy | **PASS** | Controller reports partial WASM diagnostic and standard fallback; no upscaler is stacked. |

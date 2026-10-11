@@ -12,7 +12,7 @@ Electron: 44.7.0 (Chromium version is recorded by the Windows app diagnostics an
 Electron Builder: 26.17.0
 Renderer build: PASS (`npm run build`)
 Automated unit tests: PASS (15 tests)
-Shipped-dependency audit: PASS (`npm audit --omit=dev`, zero findings)
+Full locked dependency audit: PASS (8 moderate findings in the 2026-10-11 report; 0 high or critical). This includes the Electron package and build tooling; see the attached dependency audit.
 Windows Release build in this local host: BLOCKED (no Windows compiler/SDK or Windows runtime available)
 
 IMPORTANT: This checked-in status summary is not proof that a Windows executable exists. The exact per-build source SHA, runner/compiler/runtime versions, packaged-app smoke-test output, executable path, result, and size are written by scripts/package-windows.ps1 in the Windows GitHub Actions job. A downloadable executable may only be claimed after that job succeeds; the report is then shipped beside the tested executable and portable ZIP. See docs/BUILD_WINDOWS.md and docs/TEST_RESULTS.md.

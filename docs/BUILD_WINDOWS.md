@@ -32,18 +32,18 @@
 
 `.github/workflows/build.yml` runs the Node tests and renderer build on Linux and builds the actual Windows x64 portable app on `windows-latest`. Actions are pinned to immutable commit IDs; Node is pinned to `22.22.3`; npm dependencies are locked. The Windows job:
 
-1. Installs with `npm ci`, runs `npm test`, and audits runtime dependencies.
+1. Installs with `npm ci`, runs `npm test`, and audits the full locked dependency tree, including the Electron build/runtime package.
 2. Builds with `electron-builder --win portable --x64`.
 3. Verifies `release/TriCoreBrowser.exe` exists and is at least 30 MB (preventing an empty/placeholder upload).
 4. Launches the packaged executable with `--smoke-test` and requires exit code 0.
 5. Uses `scripts/package-windows.ps1` to assemble the portable ZIP, build/size reports, and SHA-256 checksums.
 6. Uploads the executable, complete ZIP, and reports as the `TriCoreBrowser-Windows-x64` workflow artifact (30-day retention).
 
-The full npm audit report is retained as a CI artifact. The current package has no production/runtime dependency vulnerabilities according to `npm audit --omit=dev`; npm reports moderate findings in the development/build dependency tree. The CI audit step records those results and fails on high or critical findings.
+The full npm audit report is retained as a CI artifact. The app has no declared npm production dependencies; Electron itself is a dev dependency used to build the bundled runtime, so `npm audit --omit=dev` would exclude it and is not used as the security gate. CI audits the complete lockfile, including Electron and electron-builder. The 2026-10-11 audit reported 8 moderate findings and 0 high/critical findings; the full report/tree are uploaded and the gate fails on high or critical findings.
 
 ## Release workflow
 
-`.github/workflows/release.yml` rebuilds and reruns the packaged-app test before publication. On this session branch, the release path is explicitly opted into by a commit subject of the exact form `[publish-prerelease v1.0.0-alpha.1]`; it only listens to `arena/66abfdc9-tri-core-browser`, and stable tags are rejected. The file also defines a manual `workflow_dispatch` path with an explicit publish input for repositories/refs where GitHub exposes it. Ordinary commits and pull requests do not publish a public release. The workflow uploads `TriCoreBrowser.exe`, `TriCoreBrowser-Windows-x64-portable.zip`, `BUILD_REPORT.txt`, `SIZE_AUDIT.txt`, and `SHA256SUMS.txt` to the GitHub Release.
+`.github/workflows/release.yml` rebuilds and reruns the packaged-app test before publication. On this session branch, the release path is explicitly opted into by a commit subject of the exact form `[publish-prerelease v1.0.0-alpha.2]`; it only listens to `arena/66abfdc9-tri-core-browser`, and stable tags are rejected. The file also defines a manual `workflow_dispatch` path with an explicit publish input for repositories/refs where GitHub exposes it. Ordinary commits and pull requests do not publish a public release. The workflow uploads `TriCoreBrowser.exe`, `TriCoreBrowser-Windows-x64-portable.zip`, `BUILD_REPORT.txt`, `SIZE_AUDIT.txt`, and `SHA256SUMS.txt` to the GitHub Release.
 
 ## Build environment limits
 

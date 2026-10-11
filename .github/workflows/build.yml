@@ -30,8 +30,8 @@ jobs:
         run: npm test
       - name: Build production renderer
         run: npm run build
-      - name: Audit shipped dependencies
-        run: npm audit --omit=dev
+      - name: Audit full locked dependency tree (fail on high/critical)
+        run: npm audit --audit-level=high
       - name: Record full dependency audit
         run: node scripts/dependency-audit.cjs
       - name: Upload Linux test reports
@@ -61,8 +61,8 @@ jobs:
         run: npm ci
       - name: Run automated tests
         run: npm test
-      - name: Audit shipped dependencies
-        run: npm audit --omit=dev
+      - name: Audit full locked dependency tree (fail on high/critical)
+        run: npm audit --audit-level=high
       - name: Record full dependency audit
         run: node scripts/dependency-audit.cjs
       - name: Build Windows x64 portable executable

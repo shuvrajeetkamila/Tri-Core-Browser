@@ -7,10 +7,10 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Prerelease tag (for example v1.0.0-alpha.1)'
+        description: 'Prerelease tag (for example v1.0.0-alpha.2)'
         required: true
         type: string
-        default: v1.0.0-alpha.1
+        default: v1.0.0-alpha.2
       publish:
         description: 'Publish this tested build as a GitHub prerelease'
         required: true
@@ -39,8 +39,8 @@ jobs:
         run: npm ci
       - name: Run automated tests
         run: npm test
-      - name: Audit shipped dependencies
-        run: npm audit --omit=dev
+      - name: Audit full locked dependency tree (fail on high/critical)
+        run: npm audit --audit-level=high
       - name: Record full dependency audit
         run: node scripts/dependency-audit.cjs
       - name: Build Windows x64 portable executable
@@ -111,7 +111,7 @@ jobs:
             subject=$(printf '%s' "$COMMIT_MESSAGE" | head -n 1)
             prefix='[publish-prerelease '
             if [[ "$subject" != "$prefix"* || "$subject" != *']' ]]; then
-              echo 'Opt-in commit subject must be [publish-prerelease v1.0.0-alpha.1].' >&2
+              echo 'Opt-in commit subject must be [publish-prerelease v1.0.0-alpha.2].' >&2
               exit 1
             fi
             RELEASE_TAG="${subject#"$prefix"}"
@@ -120,7 +120,7 @@ jobs:
             RELEASE_TAG="$DISPATCH_TAG"
           fi
           if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+[.][0-9]+[.][0-9]+-(alpha|beta|rc)[.][0-9]+$ ]]; then
-            echo 'This build is experimental. Use a prerelease tag such as v1.0.0-alpha.1; stable releases are disabled.' >&2
+            echo 'This build is experimental. Use a prerelease tag such as v1.0.0-alpha.2; stable releases are disabled.' >&2
             exit 1
           fi
           for asset in \

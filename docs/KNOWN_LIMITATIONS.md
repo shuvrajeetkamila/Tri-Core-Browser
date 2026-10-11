@@ -24,6 +24,6 @@
 - Windows x64 is the target. The application has not been compiled or launched directly in the Linux Arena container; the mandatory Windows GitHub Actions build/smoke test must pass before claiming a downloadable executable.
 - The app is unsigned. Windows SmartScreen may warn and Windows has no verified publisher identity for this binary.
 - The first Windows smoke test covers app-shell controls, a local HTTP site, JavaScript, the controlled WASM module, and tab creation/selection/closure. The optional `https://example.com/` runtime probe can be **BLOCKED** if the hosted runner/network cannot reach it; certificate checks are never bypassed.
-- Full npm audit currently reports moderate findings in development/build dependencies. The runtime dependency audit (`npm audit --omit=dev`) reports no production dependencies; CI retains the full audit JSON and fails on high or critical findings.
+- Full npm audit currently reports 8 moderate findings and 0 high/critical findings in the locked Electron/build toolchain. Electron is a dev dependency used to assemble the bundled runtime, so an `--omit=dev` audit would exclude it; CI audits the full lockfile, retains the report/tree and fails on high or critical findings.
 
 See `docs/GRAPHICS_INTEGRATION.md`, `docs/BUILD_WINDOWS.md`, and `docs/TEST_RESULTS.md` for the current evidence and next steps.
