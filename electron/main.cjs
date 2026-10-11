@@ -50,6 +50,30 @@ let totalFsrProcessedFrames = 0;
 let lastFsrFailure = '';
 let lastFsrReport = null;
 
+function appendSmokeDiagnostic(message) {
+  const logPath = process.env.TRICORE_SMOKE_LOG;
+  if (!logPath) return;
+  try {
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    fs.appendFileSync(logPath, `${String(message)}\n`, 'utf8');
+  } catch {
+    // Smoke diagnostics must never change normal browser startup or fallback behavior.
+  }
+}
+
+function writeSmokeDiagnostic(message, level = 'log') {
+  appendSmokeDiagnostic(message);
+  if (level === 'error') console.error(message);
+  else console.log(message);
+}
+
+if (process.argv.includes('--smoke-test')) {
+  appendSmokeDiagnostic(`[smoke] Packaged main-process entry loaded; Electron ${process.versions.electron}; Chromium ${process.versions.chrome}; Node.js ${process.versions.node}.`);
+  process.on('uncaughtExceptionMonitor', (error) => {
+    appendSmokeDiagnostic(`[smoke] Uncaught main-process exception: ${error?.stack || error}`);
+  });
+}
+
 app.setName('Tri-Core Browser');
 
 function safeWebUrl(value) {
@@ -1035,9 +1059,9 @@ async function runSmokeTest() {
       mainWindow.show();
       mainWindow.focus();
     }
-    console.log(`[smoke] Runtime versions: Electron ${process.versions.electron}; Chromium ${process.versions.chrome}; Node.js ${process.versions.node}.`);
+    writeSmokeDiagnostic(`[smoke] Runtime versions: Electron ${process.versions.electron}; Chromium ${process.versions.chrome}; Node.js ${process.versions.node}.`);
     const initialGraphicsDiagnostics = await getGraphicsDiagnostics();
-    console.log(`[smoke] Electron GPU devices: ${JSON.stringify(initialGraphicsDiagnostics.gpuDevices)}; Chromium graphics implementation details: ${JSON.stringify(initialGraphicsDiagnostics.graphicsApiDetails)}; D3D12 adapters: ${JSON.stringify(initialGraphicsDiagnostics.nativeFsrAdapters)}`);
+    writeSmokeDiagnostic(`[smoke] Electron GPU devices: ${JSON.stringify(initialGraphicsDiagnostics.gpuDevices)}; Chromium graphics implementation details: ${JSON.stringify(initialGraphicsDiagnostics.graphicsApiDetails)}; D3D12 adapters: ${JSON.stringify(initialGraphicsDiagnostics.nativeFsrAdapters)}`);
     const title = await mainWindow.webContents.executeJavaScript('document.title');
     if (title !== 'Tri-Core Browser') throw new Error(`Unexpected UI title: ${title}`);
     const uiControls = await mainWindow.webContents.executeJavaScript(`({
@@ -1050,7 +1074,7 @@ async function runSmokeTest() {
       tabs: Boolean(document.querySelector('[data-tabbar="0"]'))
     })`);
     if (Object.values(uiControls).some((value) => !value)) throw new Error(`A required browser control is missing: ${JSON.stringify(uiControls)}`);
-    console.log(`[smoke] Browser shell and five mode controls: PASS ${JSON.stringify(uiControls)}`);
+    writeSmokeDiagnostic(`[smoke] Browser shell and five mode controls: PASS ${JSON.stringify(uiControls)}`);
 
     localServer = http.createServer((_request, response) => {
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
@@ -1077,20 +1101,20 @@ async function runSmokeTest() {
     if (pageResults.title !== 'Tri-Core local smoke' || pageResults.javascript !== 'javascript-ok' || pageResults.wasm !== 42) {
       throw new Error(`Local site or its WASM test failed: ${JSON.stringify(pageResults)}`);
     }
-    console.log(`[smoke] Local HTTP website, JavaScript and WebAssembly add(19,23)=42: PASS (${loadedUrl})`);
+    writeSmokeDiagnostic(`[smoke] Local HTTP website, JavaScript and WebAssembly add(19,23)=42: PASS (${loadedUrl})`);
 
     const newTab = createTab(0, testUrl, { activate: true });
     if (!newTab || !(await newTab.loadPromise)) throw new Error('Creating/loading a second browser tab failed.');
     if (stateFor(0).tabs.length !== 2 || stateFor(0).id !== newTab.id) throw new Error('Tab list or active-tab state is incorrect.');
     if (!closeTab(0, newTab.id) || stateFor(0).tabs.length !== 1) throw new Error('Closing the second tab failed.');
-    console.log('[smoke] Add, activate and close a tab while retaining the last tab: PASS');
+    writeSmokeDiagnostic('[smoke] Add, activate and close a tab while retaining the last tab: PASS');
 
     try {
       const httpsUrl = await waitForNavigation(smokeTab.view.webContents, 'https://example.com/', 20_000);
       if (!httpsUrl.startsWith('https://')) throw new Error('HTTPS navigation did not remain HTTPS.');
-      console.log(`[smoke] HTTPS navigation with Chromium certificate validation: PASS (${httpsUrl})`);
+      writeSmokeDiagnostic(`[smoke] HTTPS navigation with Chromium certificate validation: PASS (${httpsUrl})`);
     } catch (error) {
-      console.log(`[smoke] HTTPS external-network probe: BLOCKED (${clampText(error?.message, 220)}); no certificate bypass was used.`);
+      writeSmokeDiagnostic(`[smoke] HTTPS external-network probe: BLOCKED (${clampText(error?.message, 220)}); no certificate bypass was used.`);
     }
 
     if (process.env.TRICORE_REQUIRE_FSR_BROWSER_SMOKE === 'PASS') {
@@ -1158,14 +1182,14 @@ async function runSmokeTest() {
           nativeReport: frame.nativeReport,
         })),
       }, null, 2)}\n`, { mode: 0o600 });
-      console.log(`[smoke] Real WebContentsView WebGL2 capture → Electron capturePage PNG → AMD FSR 1.0.2 EASU+RCAS D3D12 → PNG validation: PASS; adapter=${fsrResult.frames[0].adapter} (WARP SOFTWARE); frames=${fsrResult.frameCount}; distinct browser input frames=${fsrResult.distinctInputFrames}; distinct capture resolutions=${fsrResult.distinctInputResolutions}; latest ${fsrResult.frames[2].inputWidth}x${fsrResult.frames[2].inputHeight} -> ${fsrResult.frames[2].outputWidth}x${fsrResult.frames[2].outputHeight}; report=${fsrResult.reportPath}; summary=${summaryPath}`);
+      writeSmokeDiagnostic(`[smoke] Real WebContentsView WebGL2 capture → Electron capturePage PNG → AMD FSR 1.0.2 EASU+RCAS D3D12 → PNG validation: PASS; adapter=${fsrResult.frames[0].adapter} (WARP SOFTWARE); frames=${fsrResult.frameCount}; distinct browser input frames=${fsrResult.distinctInputFrames}; distinct capture resolutions=${fsrResult.distinctInputResolutions}; latest ${fsrResult.frames[2].inputWidth}x${fsrResult.frames[2].inputHeight} -> ${fsrResult.frames[2].outputWidth}x${fsrResult.frames[2].outputHeight}; report=${fsrResult.reportPath}; summary=${summaryPath}`);
     } else {
-      console.log('[smoke] Browser-frame FSR capture: NOT RUN (TRICORE_REQUIRE_FSR_BROWSER_SMOKE=PASS was not set).');
+      writeSmokeDiagnostic('[smoke] Browser-frame FSR capture: NOT RUN (TRICORE_REQUIRE_FSR_BROWSER_SMOKE=PASS was not set).');
     }
-    console.log(`[smoke] Overall local runtime checks: PASS (${Date.now() - startedAt} ms)`);
+    writeSmokeDiagnostic(`[smoke] Overall local runtime checks: PASS (${Date.now() - startedAt} ms)`);
     app.exit(0);
   } catch (error) {
-    console.error(`[smoke] FAIL: ${error?.stack || error}`);
+    writeSmokeDiagnostic(`[smoke] FAIL: ${error?.stack || error}`, 'error');
     app.exit(1);
   } finally {
     if (localServer) localServer.close();
@@ -1324,10 +1348,14 @@ if (!gotLock) {
   });
 
   app.whenReady().then(() => {
+    appendSmokeDiagnostic('[smoke] Electron app.whenReady resolved.');
     loadBrowserData();
     createWindow();
     if (process.argv.includes('--smoke-test')) {
-      mainWindow.webContents.once('did-finish-load', () => runSmokeTest());
+      mainWindow.webContents.once('did-finish-load', () => {
+        appendSmokeDiagnostic('[smoke] Main browser UI did-finish-load; starting smoke checks.');
+        runSmokeTest();
+      });
     }
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();

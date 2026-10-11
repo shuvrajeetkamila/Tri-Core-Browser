@@ -87,11 +87,14 @@ jobs:
           $exeItem = Get-Item $exe
           $stdout = Join-Path $env:RUNNER_TEMP 'tricore-smoke.stdout.txt'
           $stderr = Join-Path $env:RUNNER_TEMP 'tricore-smoke.stderr.txt'
+          $smokeLog = Join-Path $env:RUNNER_TEMP 'tricore-smoke-main.log.txt'
+          if (Test-Path $smokeLog) { Remove-Item $smokeLog -Force }
           $fsrSmokeOut = Join-Path $env:RUNNER_TEMP 'tricore-fsr-browser-frame-smoke'
           if (Test-Path $fsrSmokeOut) { Remove-Item $fsrSmokeOut -Recurse -Force }
           New-Item -ItemType Directory -Path $fsrSmokeOut -Force | Out-Null
           $env:TRICORE_REQUIRE_FSR_BROWSER_SMOKE = 'PASS'
           $env:TRICORE_FSR_SMOKE_OUT = $fsrSmokeOut
+          $env:TRICORE_SMOKE_LOG = $smokeLog
           $process = Start-Process -FilePath $exe -ArgumentList @('--smoke-test') -NoNewWindow -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
           if (-not $process.WaitForExit(300000)) {
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
@@ -101,8 +104,9 @@ jobs:
           $process.Refresh()
           if (Test-Path $stdout) { Get-Content $stdout }
           if (Test-Path $stderr) { Get-Content $stderr }
+          if (Test-Path $smokeLog) { Get-Content $smokeLog }
           if ($process.ExitCode -ne 0) { throw "Packaged browser smoke test exited with $($process.ExitCode)." }
-          $smokeText = if (Test-Path $stdout) { Get-Content $stdout -Raw } else { '' }
+          $smokeText = if (Test-Path $smokeLog) { Get-Content $smokeLog -Raw } else { '' }
           if (-not $smokeText.Contains('[smoke] Real WebContentsView WebGL2 capture')) { throw 'Packaged smoke log does not contain browser-frame capture-to-FSR evidence.' }
           $summaryPath = Join-Path $fsrSmokeOut 'browser-frame-smoke-summary.json'
           if (-not (Test-Path $summaryPath -PathType Leaf)) { throw 'Browser-frame FSR smoke report was not produced.' }
@@ -135,6 +139,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $diagnosticFiles = @(
+            'tricore-smoke-main.log.txt',
             'tricore-smoke.stdout.txt',
             'tricore-smoke.stderr.txt',
             'tricore-fsr-browser-frame-smoke/browser-frame-smoke-summary.json'
@@ -171,6 +176,7 @@ jobs:
         with:
           name: TriCoreBrowser-Packaged-Smoke-Diagnostics
           path: |
+            ${{ runner.temp }}/tricore-smoke-main.log.txt
             ${{ runner.temp }}/tricore-smoke.stdout.txt
             ${{ runner.temp }}/tricore-smoke.stderr.txt
             ${{ runner.temp }}/tricore-smoke-diagnostics.md
