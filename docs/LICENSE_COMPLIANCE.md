@@ -22,13 +22,13 @@ The portable executable is built from Electron's official platform distribution.
 ## Graphics SDKs
 
 - **NVIDIA Streamline/DLSS:** the official [Streamline repository](https://github.com/NVIDIA-RTX/Streamline) was inspected for integration requirements and its `license.txt`/release guidance. No Streamline SDK, DLSS feature plugin, NGX runtime, DLL, model/weight file, proprietary header, or sample was copied into this project or release. Streamline's README notes that some feature binaries are obtained through official release artifacts and calls out signed production plugin use. Because no such component is redistributed, this repository does not grant permission to distribute it; any future integration requires a fresh feature-specific SDK/EULA, application-ID, signing, driver and redistribution review.
-- **AMD FidelityFX SDK/FSR:** the official [FidelityFX-SDK repository](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK) and its versioned license documentation were inspected. No SDK source, shader, compiled binary, or sample was copied into this project or release. A future integration must pin the exact SDK/technique version, include its license and third-party notices, and verify the current redistribution terms before shipping.
+- **AMD FSR1 source:** the official [GPUOpen-Effects/FidelityFX-FSR repository](https://github.com/GPUOpen-Effects/FidelityFX-FSR) is pinned at commit `a21ffb8f6c13233ba336352bdff293894c706575` (FSR 1.0.2). The bounded D3D12 helper uses `ffx_a.h`, `ffx_fsr1.h`, and the sample wrapper `FSR_Pass.hlsl`; the upstream MIT license, original headers/attributions, source paths, and SHA-256 hashes are retained in `native/fsr1-poc/third_party/amd/UPSTREAM.md`. These files are packaged beside the helper. No proprietary AMD runtime or compiled SDK binary is bundled. This source license does not imply support for arbitrary browser content or performance gains; recheck notices/terms on every update.
 
 ## Distribution checks
 
-- No NVIDIA or AMD binary is loaded from an arbitrary system DLL path.
-- No non-project graphics SDK binary is included in the repository or planned release.
-- Windows packages include the executable, user-facing documentation and notices; CI records SHA-256 checksums and size reports.
+- No NVIDIA or AMD proprietary runtime binary is loaded from an arbitrary system DLL path; the helper compiles the pinned AMD FSR1 shader source locally through D3DCompile.
+- The only included graphics vendor code is the licensed AMD FSR1 shader source and its required notices; no DLSS plugin/model, driver DLL, or proprietary upscaler binary is included.
+- Windows packages include the executable, user-facing documentation/notices, and controlled-scene PNG/report evidence; CI records SHA-256 checksums and size reports.
 - Generated executables and ZIPs are ignored by Git and uploaded as GitHub artifacts/releases rather than committed to source history.
 
 This audit does **not** certify that all future Electron/Chromium transitive notices are reproduced by every packaging configuration. The Windows CI package must be inspected after each Electron version change to confirm the upstream runtime license files remain present in its packaged resources.

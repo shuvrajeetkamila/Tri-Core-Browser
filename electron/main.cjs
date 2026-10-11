@@ -7,12 +7,23 @@ const {
   Menu,
   ipcMain,
   shell,
+  nativeImage,
 } = require('electron');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const http = require('node:http');
+const { execFile } = require('node:child_process');
+const {
+  EXPECTED_INPUT_SOURCE,
+  buildBilinearReferencePath,
+  buildNativeFsrArguments,
+  normalizeCaptureRequest,
+  validateCaptureContext,
+  validateCaptureDimensions,
+  validateNativeFsrReport,
+} = require('./fsr1-bridge.cjs');
 
 const CORE_COUNT = 3;
 const MAX_TABS_PER_CORE = 20;
@@ -20,6 +31,9 @@ const MAX_HISTORY_ENTRIES = 500;
 const MAX_DOWNLOAD_ENTRIES = 80;
 const DEFAULT_HOME_URL = 'https://duckduckgo.com/';
 const WEB_PROTOCOLS = new Set(['http:', 'https:']);
+const FSR_TEST_SCENE_PATH = path.join(__dirname, '..', 'app', 'diagnostics', 'fsr1-browser-game.html');
+const FSR_TEST_SCENE_URL = pathToFileURL(FSR_TEST_SCENE_PATH).href;
+const MAX_FSR_PREVIEW_BYTES = 12 * 1024 * 1024;
 const coreTabs = Array.from({ length: CORE_COUNT }, () => []);
 const activeTabs = Array.from({ length: CORE_COUNT }, () => null);
 const layoutBounds = Array.from({ length: CORE_COUNT }, () => ({ x: 0, y: 0, width: 0, height: 0 }));
@@ -30,6 +44,11 @@ let mainWindow = null;
 let homeUrl = DEFAULT_HOME_URL;
 let browserDataPath = '';
 let browserData = { version: 1, bookmarks: [], history: [], settings: { homeUrl: DEFAULT_HOME_URL } };
+let activeFsrJob = null;
+let fsrCaptureRequestPending = false;
+let totalFsrProcessedFrames = 0;
+let lastFsrFailure = '';
+let lastFsrReport = null;
 
 app.setName('Tri-Core Browser');
 
@@ -119,6 +138,7 @@ function tabState(tab) {
     canGoBack: contents.canGoBack(),
     canGoForward: contents.canGoForward(),
     error: tab.error,
+    fsrTestScene: Boolean(tab.isFsrTestScene && contents.getURL().split('#')[0] === FSR_TEST_SCENE_URL),
   };
 }
 
@@ -254,10 +274,26 @@ function loadTab(tab, rawUrl) {
   const url = safeWebUrl(rawUrl);
   if (!tab || !url || tab.view.webContents.isDestroyed()) return Promise.resolve(false);
   tab.error = '';
+  tab.isFsrTestScene = false;
   sendState(tab.slot);
   return tab.view.webContents.loadURL(url).then(() => true).catch((error) => {
     if (!tab.view.webContents.isDestroyed()) {
       tab.error = clampText(error?.message || 'Navigation failed.', 500);
+      sendState(tab.slot);
+    }
+    return false;
+  });
+}
+
+function loadFsrTestScene(tab) {
+  if (!tab || !tab.view || tab.view.webContents.isDestroyed()) return Promise.resolve(false);
+  tab.isFsrTestScene = true;
+  tab.error = '';
+  sendState(tab.slot);
+  return tab.view.webContents.loadFile(FSR_TEST_SCENE_PATH).then(() => true).catch((error) => {
+    tab.isFsrTestScene = false;
+    if (!tab.view.webContents.isDestroyed()) {
+      tab.error = clampText(error?.message || 'The local WebGL2 test scene could not be loaded.', 500);
       sendState(tab.slot);
     }
     return false;
@@ -321,7 +357,8 @@ function makeWebContentsView(slot, tab) {
     return { action: 'deny' };
   });
   contents.on('will-navigate', (event, url) => {
-    if (!safeWebUrl(url)) event.preventDefault();
+    const isApprovedDiagnosticNavigation = tab.isFsrTestScene && String(url).split('#')[0] === FSR_TEST_SCENE_URL;
+    if (!safeWebUrl(url) && !isApprovedDiagnosticNavigation) event.preventDefault();
   });
   contents.on('will-redirect', (event, url) => {
     if (!safeWebUrl(url)) event.preventDefault();
@@ -369,10 +406,10 @@ function makeWebContentsView(slot, tab) {
   return view;
 }
 
-function createTab(slot, rawUrl = homeUrl, { activate = true } = {}) {
+function createTab(slot, rawUrl = homeUrl, { activate = true, fsrTestScene = false } = {}) {
   if (validSlot(slot) < 0 || !mainWindow || mainWindow.isDestroyed()) return null;
   if (coreTabs[slot].length >= MAX_TABS_PER_CORE) return null;
-  const tab = { id: crypto.randomUUID(), slot, view: null, error: '' };
+  const tab = { id: crypto.randomUUID(), slot, view: null, error: '', isFsrTestScene: false };
   makeWebContentsView(slot, tab);
   coreTabs[slot].push(tab);
   if (activate || !activeTabs[slot]) {
@@ -381,7 +418,7 @@ function createTab(slot, rawUrl = homeUrl, { activate = true } = {}) {
   } else {
     tab.view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
   }
-  const loadPromise = loadTab(tab, rawUrl);
+  const loadPromise = fsrTestScene ? loadFsrTestScene(tab) : loadTab(tab, rawUrl);
   sendState(slot);
   tab.loadPromise = loadPromise;
   return tab;
@@ -458,6 +495,384 @@ function createWindow() {
   });
 }
 
+function nativeFsrExecutablePath() {
+  const candidates = app.isPackaged
+    ? [path.join(process.resourcesPath, 'native', 'fsr1', 'TriCoreFsr1Poc.exe')]
+    : [
+      path.join(__dirname, '..', 'build', 'fsr1-poc', 'Release', 'TriCoreFsr1Poc.exe'),
+      path.join(__dirname, '..', 'build', 'fsr1-poc', 'Debug', 'TriCoreFsr1Poc.exe'),
+      path.join(__dirname, '..', 'native', 'fsr1-poc', 'build', 'Release', 'TriCoreFsr1Poc.exe'),
+    ];
+  for (const candidate of candidates) {
+    if (!fs.existsSync(candidate) || !fs.statSync(candidate).isFile()) continue;
+    const shader = path.join(path.dirname(candidate), 'amd', 'FSR_Pass.hlsl');
+    if (fs.existsSync(shader) && fs.statSync(shader).isFile()) return candidate;
+  }
+  return '';
+}
+
+function runNativeFsrProcess(executable, args, { timeout = 10_000, job = null } = {}) {
+  return new Promise((resolve, reject) => {
+    let child = null;
+    child = execFile(executable, args, {
+      windowsHide: true,
+      timeout,
+      maxBuffer: 2 * 1024 * 1024,
+      encoding: 'utf8',
+    }, (error, stdout, stderr) => {
+      if (job && job.child === child) {
+        job.child = null;
+        job.nativeInitialized = false;
+        job.nativeProcessing = false;
+      }
+      if (error) {
+        const diagnostic = clampText(stderr || stdout || error.message || 'Native helper failed.', 1000);
+        reject(new Error(`Native FSR helper failed (${error.code || error.signal || 'unknown'}): ${diagnostic}`));
+        return;
+      }
+      resolve({ stdout: String(stdout || ''), stderr: String(stderr || '') });
+    });
+    if (job) {
+      job.child = child;
+      job.nativeInitialized = false;
+      job.nativeProcessing = false;
+      let markerBuffer = '';
+      child.stdout?.on('data', (chunk) => {
+        if (job.child !== child) return;
+        markerBuffer = `${markerBuffer}${chunk.toString('utf8')}`.slice(-256);
+        if (!job.nativeInitialized && markerBuffer.includes('FSR1_INITIALIZED')) {
+          job.nativeInitialized = true;
+          sendFsrProgress({ jobId: job.id, slot: job.slot, frameIndex: job.frameIndex, frameCount: job.frameCount, state: 'INITIALIZED' });
+        }
+        if (!job.nativeProcessing && markerBuffer.includes('FSR1_PROCESSING')) {
+          job.nativeInitialized = true;
+          job.nativeProcessing = true;
+          sendFsrProgress({ jobId: job.id, slot: job.slot, frameIndex: job.frameIndex, frameCount: job.frameCount, state: 'NATIVE PROCESSING' });
+        }
+      });
+      if (job.cancelled) child.kill();
+    }
+  });
+}
+
+let nativeFsrAdapterCache = null;
+let nativeFsrAdapterCacheAt = 0;
+let nativeFsrAdapterProbe = null;
+
+async function getNativeFsrAdapters({ refresh = false } = {}) {
+  const executable = nativeFsrExecutablePath();
+  if (!executable) {
+    return { available: false, adapters: [], warpAvailable: false, error: 'The bundled FSR1 helper or licensed AMD shader inputs are not built/packaged for this platform.' };
+  }
+  if (!refresh && nativeFsrAdapterCache && Date.now() - nativeFsrAdapterCacheAt < 30_000) return nativeFsrAdapterCache;
+  if (nativeFsrAdapterProbe) return nativeFsrAdapterProbe;
+  nativeFsrAdapterProbe = (async () => {
+    try {
+      const { stdout } = await runNativeFsrProcess(executable, ['--list-adapters']);
+      const report = JSON.parse(stdout.trim());
+      if (report?.status !== 'PASS' || !Array.isArray(report.adapters)) throw new Error('Adapter enumeration returned an invalid report.');
+      const adapters = report.adapters.filter((adapter) => adapter && Number.isInteger(adapter.index)).map((adapter) => ({
+        index: adapter.index,
+        name: clampText(adapter.name || 'Unknown D3D12 adapter', 160),
+        vendorId: clampText(adapter.vendorId || '', 20),
+        deviceId: clampText(adapter.deviceId || '', 20),
+        dedicatedVideoMemoryBytes: Math.max(0, Number(adapter.dedicatedVideoMemoryBytes) || 0),
+        softwareAdapter: adapter.softwareAdapter === true,
+        featureLevel: clampText(adapter.featureLevel || '', 32),
+        shaderModel: clampText(adapter.shaderModel || '', 80),
+        supports: adapter.support && typeof adapter.support === 'object' ? {
+          r8g8b8a8Texture2D: adapter.support.r8g8b8a8Texture2D === true,
+          shaderSample: adapter.support.shaderSample === true,
+          shaderLoad: adapter.support.shaderLoad === true,
+          unorderedAccess: adapter.support.unorderedAccess === true,
+          typedUavStore: adapter.support.typedUavStore === true,
+        } : {},
+        fsr1Compatible: adapter.fsr1Compatible === true,
+      }));
+      nativeFsrAdapterCache = { available: true, adapters, warpAvailable: report.warpAvailable === true, error: '' };
+      nativeFsrAdapterCacheAt = Date.now();
+      return nativeFsrAdapterCache;
+    } catch (error) {
+      nativeFsrAdapterCache = { available: false, adapters: [], warpAvailable: false, error: clampText(error?.message || 'D3D12 adapter enumeration failed.', 500) };
+      nativeFsrAdapterCacheAt = Date.now();
+      return nativeFsrAdapterCache;
+    } finally {
+      nativeFsrAdapterProbe = null;
+    }
+  })();
+  return nativeFsrAdapterProbe;
+}
+
+function fsrCaptureOutputRoot() {
+  if (process.argv.includes('--smoke-test') && process.env.TRICORE_FSR_SMOKE_OUT) {
+    return path.resolve(process.env.TRICORE_FSR_SMOKE_OUT);
+  }
+  return path.join(app.getPath('userData'), 'fsr1-browser-frame-captures');
+}
+
+function sendFsrProgress(payload) {
+  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+    mainWindow.webContents.send('browser:fsr-progress', payload);
+  }
+}
+
+function isFsrJobCurrent(job) {
+  return !job.cancelled && activeFsrJob === job;
+}
+
+async function processBrowserFsrFrames(payload, options = {}) {
+  if (activeFsrJob || fsrCaptureRequestPending) return { ok: false, error: 'An FSR frame-capture test is already running.' };
+  fsrCaptureRequestPending = true;
+  try {
+    return await processBrowserFsrFramesInternal(payload, options);
+  } finally {
+    fsrCaptureRequestPending = false;
+  }
+}
+
+async function processBrowserFsrFramesInternal(payload, { useWarp = false, smokeTest = false } = {}) {
+  const normalized = normalizeCaptureRequest(payload);
+  if (!normalized.ok) return normalized;
+  if (useWarp && !smokeTest) return { ok: false, error: 'WARP software processing is reserved for the packaged regression smoke test.' };
+  if (activeFsrJob) return { ok: false, error: 'An FSR frame-capture test is already running.' };
+
+  const adapters = await getNativeFsrAdapters({ refresh: true });
+  const executable = nativeFsrExecutablePath();
+  if (!executable || !adapters.available) {
+    const reason = adapters.error || 'The native FSR1 helper is unavailable.';
+    return { ok: false, error: reason };
+  }
+  let adapterIndex = normalized.adapterIndex;
+  if (useWarp) {
+    if (!adapters.warpAvailable) return { ok: false, error: 'D3D12 WARP is unavailable for this software-only regression test.' };
+  } else {
+    const compatibleAdapters = adapters.adapters.filter((adapter) => !adapter.softwareAdapter && adapter.fsr1Compatible);
+    if (adapterIndex === null) adapterIndex = compatibleAdapters[0]?.index ?? null;
+    const selected = compatibleAdapters.find((adapter) => adapter.index === adapterIndex);
+    if (!selected) {
+      const reason = compatibleAdapters.length
+        ? 'The selected D3D12 adapter is no longer available or does not expose the required FSR1 features.'
+        : 'No non-software D3D12 adapter with the required FSR1 features is available. WARP is software-only and is not used as a hardware fallback.';
+      return { ok: false, error: reason };
+    }
+  }
+
+  const slot = normalized.slot;
+  const tab = coreTabs[slot].find((candidate) => candidate.id === normalized.tabId) || null;
+  const contents = tab?.view?.webContents;
+  const getCaptureContext = () => {
+    const activeTab = activeTabs[slot];
+    const destroyed = !contents || contents.isDestroyed();
+    const viewBounds = !destroyed && tab?.view ? tab.view.getBounds() : null;
+    return validateCaptureContext({
+      requestedSlot: slot,
+      requestedTabId: normalized.tabId,
+      activeSlot: slot,
+      activeTabId: activeTab?.id || '',
+      approvedScene: Boolean(tab?.isFsrTestScene),
+      currentUrl: !destroyed ? contents.getURL().split('#')[0] : '',
+      expectedUrl: FSR_TEST_SCENE_URL,
+      loading: destroyed || contents.isLoading(),
+      viewVisible: Boolean(viewBounds && viewBounds.width > 0 && viewBounds.height > 0),
+      windowVisible: Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized()),
+    });
+  };
+  const context = getCaptureContext();
+  if (!context.ok) return context;
+
+  let sceneSnapshot;
+  try {
+    sceneSnapshot = await contents.executeJavaScript('window.triCoreFsrTest && window.triCoreFsrTest.getSnapshot()');
+  } catch (error) {
+    return { ok: false, error: `The bundled WebGL2 scene did not respond: ${clampText(error?.message, 300)}` };
+  }
+  if (!sceneSnapshot?.ok || sceneSnapshot.renderer !== 'webgl2' || !Number.isSafeInteger(sceneSnapshot.canvasWidth) || !Number.isSafeInteger(sceneSnapshot.canvasHeight)) {
+    return { ok: false, error: 'The active tab is not reporting a working WebGL2 test scene; no frame was captured.' };
+  }
+
+  const originalSmokeViewBounds = smokeTest ? tab.view.getBounds() : null;
+  const job = {
+    id: crypto.randomUUID(), slot, tabId: tab.id, child: null, cancelled: false,
+    nativeInitialized: false, nativeProcessing: false, frameIndex: 0, frameCount: normalized.frameCount,
+  };
+  activeFsrJob = job;
+  const runStarted = process.hrtime.bigint();
+  const runDirectory = path.join(fsrCaptureOutputRoot(), `${new Date().toISOString().replace(/[:.]/g, '-')}-${job.id}`);
+  const results = [];
+  let lastInputDataUrl = '';
+  let lastOutputDataUrl = '';
+  try {
+    fs.mkdirSync(runDirectory, { recursive: true });
+    for (let index = 0; index < normalized.frameCount; index += 1) {
+      if (!isFsrJobCurrent(job)) throw new Error('Capture cancelled.');
+      if (smokeTest && originalSmokeViewBounds && index > 0) {
+        tab.view.setBounds({
+          ...originalSmokeViewBounds,
+          width: Math.max(64, originalSmokeViewBounds.width - index * 64),
+          height: Math.max(64, originalSmokeViewBounds.height - index * 40),
+        });
+        await new Promise((resolve) => setTimeout(resolve, 120));
+      }
+      await new Promise((resolve) => setTimeout(resolve, index === 0 ? 120 : 180));
+      const beforeCapture = getCaptureContext();
+      if (!beforeCapture.ok) throw new Error(beforeCapture.error);
+      const captureStarted = process.hrtime.bigint();
+      const capturedImage = await contents.capturePage();
+      const capturePageMs = Number(process.hrtime.bigint() - captureStarted) / 1e6;
+      const afterCapture = getCaptureContext();
+      if (!afterCapture.ok) throw new Error(`Capture was discarded because the approved scene is no longer active: ${afterCapture.error}`);
+      if (capturedImage.isEmpty()) throw new Error('Electron capturePage() returned an empty image. The view may have been hidden or occluded.');
+      const { width, height } = capturedImage.getSize();
+      const dimensionCheck = validateCaptureDimensions(width, height);
+      if (!dimensionCheck.ok) throw new Error(dimensionCheck.error);
+      const inputBytes = capturedImage.toPNG();
+      if (!inputBytes.length || inputBytes.length > MAX_FSR_PREVIEW_BYTES) {
+        throw new Error('The captured PNG is empty or exceeds the 12 MiB per-frame preview safety limit.');
+      }
+      const inputPath = path.join(runDirectory, `frame-${String(index + 1).padStart(3, '0')}-webcontents.png`);
+      const outputPath = path.join(runDirectory, `frame-${String(index + 1).padStart(3, '0')}-fsr1-easu-rcas.png`);
+      const referencePath = buildBilinearReferencePath(outputPath);
+      const reportPath = path.join(runDirectory, `frame-${String(index + 1).padStart(3, '0')}-report.json`);
+      fs.writeFileSync(inputPath, inputBytes, { mode: 0o600 });
+      const inputSha256 = crypto.createHash('sha256').update(inputBytes).digest('hex');
+      const frameSceneSnapshot = await contents.executeJavaScript('window.triCoreFsrTest && window.triCoreFsrTest.getSnapshot()');
+      if (!frameSceneSnapshot?.ok || frameSceneSnapshot.renderer !== 'webgl2') throw new Error('The test scene lost its WebGL2 context during capture.');
+      const beforeNativeProcessing = getCaptureContext();
+      if (!beforeNativeProcessing.ok) throw new Error(`Captured frame was not sent to FSR because the approved scene is no longer active: ${beforeNativeProcessing.error}`);
+
+      const nativeArgs = buildNativeFsrArguments({
+        inputPath,
+        outputPath,
+        reportPath,
+        adapterIndex: useWarp ? null : adapterIndex,
+        useWarp,
+      });
+      job.frameIndex = index + 1;
+      job.nativeInitialized = false;
+      job.nativeProcessing = false;
+      sendFsrProgress({ jobId: job.id, slot, frameIndex: index + 1, frameCount: normalized.frameCount, state: 'PROCESSING', width, height });
+      const nativeStarted = process.hrtime.bigint();
+      await runNativeFsrProcess(executable, nativeArgs, { timeout: 60_000, job });
+      const nativeProcessMs = Number(process.hrtime.bigint() - nativeStarted) / 1e6;
+      if (!isFsrJobCurrent(job)) throw new Error('Capture cancelled.');
+      const nativeReport = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+      const validation = validateNativeFsrReport(nativeReport, { width, height, referencePath });
+      if (!validation.ok) throw new Error(validation.error);
+      if (nativeReport.softwareAdapter !== useWarp) throw new Error('The native helper returned an unexpected software/hardware adapter classification.');
+
+      const processedImage = nativeImage.createFromPath(outputPath);
+      if (processedImage.isEmpty()) throw new Error('The processed FSR PNG could not be reopened for visual validation.');
+      const processedSize = processedImage.getSize();
+      if (processedSize.width !== validation.outputWidth || processedSize.height !== validation.outputHeight) {
+        throw new Error('The processed FSR PNG dimensions do not match the native validation report.');
+      }
+      const referenceImage = nativeImage.createFromPath(referencePath);
+      if (referenceImage.isEmpty()) throw new Error('The CPU bilinear-reference PNG could not be reopened for visual validation.');
+      const referenceSize = referenceImage.getSize();
+      if (referenceSize.width !== validation.outputWidth || referenceSize.height !== validation.outputHeight) {
+        throw new Error('The bilinear-reference PNG dimensions do not match the 2× output dimensions.');
+      }
+      const outputBytes = fs.readFileSync(outputPath);
+      if (!outputBytes.length || outputBytes.length > MAX_FSR_PREVIEW_BYTES) {
+        throw new Error('The processed PNG is empty or exceeds the 12 MiB preview safety limit.');
+      }
+      const result = {
+        frame: index + 1,
+        frameNumber: Number(frameSceneSnapshot.frameNumber) || 0,
+        sceneCanvasWidth: Number(frameSceneSnapshot.canvasWidth) || 0,
+        sceneCanvasHeight: Number(frameSceneSnapshot.canvasHeight) || 0,
+        webglRenderer: clampText(frameSceneSnapshot.backend || 'WebGL2 renderer not reported', 180),
+        inputWidth: validation.inputWidth,
+        inputHeight: validation.inputHeight,
+        outputWidth: validation.outputWidth,
+        outputHeight: validation.outputHeight,
+        inputSha256,
+        softwareAdapter: nativeReport.softwareAdapter,
+        adapter: clampText(nativeReport.adapter, 180),
+        adapterVendorId: clampText(nativeReport.adapterVendorId, 24),
+        capturePageMs,
+        nativeProcessMs,
+        nativeGpuTimestampsAvailable: nativeReport.gpuTimestampsAvailable === true,
+        easuGpuTimeMs: Number.isFinite(nativeReport.easuGpuTimeMs) ? nativeReport.easuGpuTimeMs : null,
+        rcasGpuTimeMs: Number.isFinite(nativeReport.rcasGpuTimeMs) ? nativeReport.rcasGpuTimeMs : null,
+        nativeEndToEndMs: Number.isFinite(nativeReport.nativeEndToEndMs) ? nativeReport.nativeEndToEndMs : null,
+        captureToPreviewMs: Number(process.hrtime.bigint() - runStarted) / 1e6,
+        checksum: nativeReport.checksum,
+        meanAbsoluteDifferenceFromBilinear: nativeReport.meanAbsoluteDifferenceFromBilinear,
+        inputPath,
+        outputPath,
+        referencePath,
+        reportPath,
+        nativeReport,
+      };
+      results.push(result);
+      totalFsrProcessedFrames += 1;
+      lastFsrReport = nativeReport;
+      lastFsrFailure = '';
+      lastInputDataUrl = `data:image/png;base64,${inputBytes.toString('base64')}`;
+      lastOutputDataUrl = `data:image/png;base64,${outputBytes.toString('base64')}`;
+      sendFsrProgress({
+        jobId: job.id,
+        slot,
+        frameIndex: index + 1,
+        frameCount: normalized.frameCount,
+        state: 'FRAME PROCESSED',
+        inputWidth: result.inputWidth,
+        inputHeight: result.inputHeight,
+        outputWidth: result.outputWidth,
+        outputHeight: result.outputHeight,
+        adapter: result.adapter,
+        softwareAdapter: result.softwareAdapter,
+      });
+    }
+
+    const distinctFrames = new Set(results.map(({ inputSha256 }) => inputSha256)).size;
+    const distinctInputResolutions = new Set(results.map(({ inputWidth, inputHeight }) => `${inputWidth}x${inputHeight}`)).size;
+    if (smokeTest && (distinctFrames !== normalized.frameCount || distinctInputResolutions !== normalized.frameCount)) {
+      throw new Error('The WebGL2 smoke scene did not produce a unique changing frame at every tested input resolution.');
+    }
+    const totalRoundTripMs = Number(process.hrtime.bigint() - runStarted) / 1e6;
+    const replyFrames = results.map(({ nativeReport, ...result }) => ({ ...result, nativeReport }));
+    const finalReport = results[results.length - 1]?.nativeReport || null;
+    return {
+      ok: true,
+      jobId: job.id,
+      source: EXPECTED_INPUT_SOURCE,
+      scope: 'Bundled animated WebGL2 test scene only; screenshot readback, separate D3D12 FSR1 processing, and diagnostic preview. Not zero-copy, real-time, or arbitrary-page upscaling.',
+      frameCount: results.length,
+      distinctInputFrames: distinctFrames,
+      distinctInputResolutions,
+      softwareAdapter: useWarp,
+      totalRoundTripMs,
+      frames: replyFrames,
+      finalReport,
+      inputPreview: lastInputDataUrl,
+      outputPreview: lastOutputDataUrl,
+      inputPath: results[results.length - 1]?.inputPath || '',
+      outputPath: results[results.length - 1]?.outputPath || '',
+      referencePath: results[results.length - 1]?.referencePath || '',
+      reportPath: results[results.length - 1]?.reportPath || '',
+    };
+  } catch (error) {
+    const reason = job.cancelled ? 'Capture cancelled by the user.' : clampText(error?.message || 'Browser-frame FSR processing failed.', 700);
+    lastFsrFailure = reason;
+    sendFsrProgress({ jobId: job.id, slot, frameIndex: results.length, frameCount: normalized.frameCount, state: job.cancelled ? 'CANCELLED' : 'FAILED', error: reason });
+    return { ok: false, jobId: job.id, error: reason, partialFrames: results.length, frames: results.map(({ nativeReport, ...result }) => result) };
+  } finally {
+    if (smokeTest && originalSmokeViewBounds && !contents.isDestroyed()) {
+      try { tab.view.setBounds(originalSmokeViewBounds); } catch { /* The smoke WebContentsView may have closed during teardown. */ }
+    }
+    if (activeFsrJob === job) activeFsrJob = null;
+  }
+}
+
+function cancelBrowserFsrFrames(jobId) {
+  if (!activeFsrJob || activeFsrJob.id !== String(jobId)) return false;
+  activeFsrJob.cancelled = true;
+  try { activeFsrJob.child?.kill(); } catch { /* A completed child needs no further action. */ }
+  return true;
+}
+
 function getGPUFeatureStatus() {
   try {
     return app.getGPUFeatureStatus();
@@ -484,6 +899,53 @@ async function getGraphicsDiagnostics() {
     driverVersion: clampText(device.driverVersion || '', 120),
     active: Boolean(device.isActive),
   }));
+  const graphicsApiDetails = {
+    glRenderer: clampText(gpuInfo?.auxAttributes?.glRenderer || gpuInfo?.gl?.renderer || '', 180),
+    glVendor: clampText(gpuInfo?.auxAttributes?.glVendor || gpuInfo?.gl?.vendor || '', 160),
+    glVersion: clampText(gpuInfo?.auxAttributes?.glVersion || gpuInfo?.gl?.version || '', 180),
+    glImplementationParts: clampText(gpuInfo?.auxAttributes?.glImplementationParts || gpuInfo?.gl?.implementationParts || '', 180),
+    angle: clampText(gpuInfo?.gl?.angle || '', 180),
+    vulkan: clampText(gpuInfo?.vulkan?.version || gpuInfo?.vulkan?.status || '', 120),
+  };
+  const nativeFsrAdapters = await getNativeFsrAdapters();
+  const compatibleAdapters = nativeFsrAdapters.adapters.filter((adapter) => !adapter.softwareAdapter && adapter.fsr1Compatible);
+  const helperExists = Boolean(nativeFsrExecutablePath());
+  const adapterApiStatus = !helperExists
+    ? 'NOT AVAILABLE: bundled D3D12 FSR1 helper is not built or packaged.'
+    : !nativeFsrAdapters.available
+      ? `D3D12 adapter query failed: ${nativeFsrAdapters.error}`
+      : `${nativeFsrAdapters.adapters.length} non-software D3D12 adapter(s) enumerated; ${compatibleAdapters.length} report the FSR1 format/shader feature set. Actual page/compositor resource access is not exposed.`;
+  const fsrReason = lastFsrFailure
+    ? `Most recent native processing attempt failed: ${lastFsrFailure}`
+    : !helperExists
+      ? 'The D3D12 FSR1 helper is not built/packaged for this platform.'
+      : !nativeFsrAdapters.available
+        ? nativeFsrAdapters.error
+        : compatibleAdapters.length
+          ? 'D3D12 FSR1 feature set is available for an explicit, bundled-WebGL2 test-scene capture only. Arbitrary webpages and the Chromium compositor are not connected.'
+          : 'The helper and FSR1 shader are present, but no non-software D3D12 adapter reports the required FSR1 features. WARP is software-only and is not a hardware fallback.';
+  const fsrFeature = {
+    implemented: helperExists,
+    detected: helperExists,
+    compatible: compatibleAdapters.length > 0,
+    initialized: Boolean(activeFsrJob?.nativeInitialized),
+    active: Boolean(activeFsrJob?.nativeProcessing),
+    processingFrames: Boolean(activeFsrJob?.nativeProcessing),
+    processedFrames: totalFsrProcessedFrames,
+    failed: Boolean(lastFsrFailure),
+    error: lastFsrFailure,
+    unsupported: !helperExists || (nativeFsrAdapters.available && compatibleAdapters.length === 0),
+    automaticEligible: false,
+    hardwareCompatibility: compatibleAdapters.length
+      ? `${compatibleAdapters.length} non-software D3D12 adapter(s) report required FSR1 features; shader initialization/frame processing is not implied.`
+      : nativeFsrAdapters.warpAvailable
+        ? 'No FSR-compatible hardware adapter reported; WARP is software-only.'
+        : 'No FSR-compatible hardware adapter reported.',
+    reason: fsrReason,
+    backend: 'WebContentsView capturePage PNG CPU readback → separate app-owned D3D12 FSR1 EASU + RCAS helper → diagnostic preview; no compositor hook or shared texture',
+    scope: 'Manual, opt-in processing of the bundled animated WebGL2 test scene only; not an arbitrary-page or real-time page upscaler.',
+    adapterApiStatus,
+  };
   return {
     appVersion: app.getVersion(),
     electronVersion: process.versions.electron || '',
@@ -492,11 +954,25 @@ async function getGraphicsDiagnostics() {
     architecture: process.arch,
     gpuDevices,
     gpuInfoError,
+    graphicsApiDetails,
     featureStatus,
+    nativeFsrAdapters,
+    lastFsrReport: lastFsrReport ? {
+      adapter: clampText(lastFsrReport.adapter || '', 180),
+      adapterVendorId: clampText(lastFsrReport.adapterVendorId || '', 24),
+      softwareAdapter: lastFsrReport.softwareAdapter === true,
+      input: lastFsrReport.input,
+      output: lastFsrReport.output,
+      gpuTimestampsAvailable: lastFsrReport.gpuTimestampsAvailable === true,
+      easuGpuTimeMs: Number.isFinite(lastFsrReport.easuGpuTimeMs) ? lastFsrReport.easuGpuTimeMs : null,
+      rcasGpuTimeMs: Number.isFinite(lastFsrReport.rcasGpuTimeMs) ? lastFsrReport.rcasGpuTimeMs : null,
+      inputCapturePath: clampText(lastFsrReport.inputCapturePath || '', 500),
+      processedCapturePath: clampText(lastFsrReport.processedCapturePath || '', 500),
+    } : null,
     integration: {
       wasm: { implemented: true, scope: 'controlled WebAssembly test in Chromium V8; not a webpage frame-rate switch' },
-      dlss: { implemented: false, scope: 'not integrated; no Streamline/DLSS native renderer or webpage texture bridge' },
-      fsr: { implemented: false, scope: 'not integrated; no FidelityFX/FSR native renderer or webpage texture bridge' },
+      dlss: { implemented: false, detected: false, automaticEligible: false, scope: 'not integrated; no Streamline/DLSS native renderer or webpage texture bridge' },
+      fsr: fsrFeature,
     },
   };
 }
@@ -555,7 +1031,13 @@ async function runSmokeTest() {
   let localServer;
   try {
     if (!mainWindow || mainWindow.isDestroyed()) throw new Error('Main window did not start.');
+    if (process.env.TRICORE_REQUIRE_FSR_BROWSER_SMOKE === 'PASS') {
+      mainWindow.show();
+      mainWindow.focus();
+    }
     console.log(`[smoke] Runtime versions: Electron ${process.versions.electron}; Chromium ${process.versions.chrome}; Node.js ${process.versions.node}.`);
+    const initialGraphicsDiagnostics = await getGraphicsDiagnostics();
+    console.log(`[smoke] Electron GPU devices: ${JSON.stringify(initialGraphicsDiagnostics.gpuDevices)}; Chromium graphics implementation details: ${JSON.stringify(initialGraphicsDiagnostics.graphicsApiDetails)}; D3D12 adapters: ${JSON.stringify(initialGraphicsDiagnostics.nativeFsrAdapters)}`);
     const title = await mainWindow.webContents.executeJavaScript('document.title');
     if (title !== 'Tri-Core Browser') throw new Error(`Unexpected UI title: ${title}`);
     const uiControls = await mainWindow.webContents.executeJavaScript(`({
@@ -609,6 +1091,76 @@ async function runSmokeTest() {
       console.log(`[smoke] HTTPS navigation with Chromium certificate validation: PASS (${httpsUrl})`);
     } catch (error) {
       console.log(`[smoke] HTTPS external-network probe: BLOCKED (${clampText(error?.message, 220)}); no certificate bypass was used.`);
+    }
+
+    if (process.env.TRICORE_REQUIRE_FSR_BROWSER_SMOKE === 'PASS') {
+      const sceneTab = createTab(0, homeUrl, { activate: true, fsrTestScene: true });
+      if (!sceneTab || !(await sceneTab.loadPromise)) throw new Error('The bundled WebGL2 FSR test scene could not be opened in a real WebContentsView.');
+      const contentBounds = mainWindow.getContentBounds();
+      if (!layoutBounds[0] || layoutBounds[0].width < 64 || layoutBounds[0].height < 64) {
+        layoutBounds[0] = { x: 0, y: 0, width: Math.max(320, Math.floor(contentBounds.width / 3)), height: Math.max(240, Math.floor(contentBounds.height * 0.7)) };
+        applyLayoutForCore(0);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      const sceneSnapshot = await sceneTab.view.webContents.executeJavaScript('window.triCoreFsrTest && window.triCoreFsrTest.getSnapshot()');
+      if (!sceneSnapshot?.ok || sceneSnapshot.renderer !== 'webgl2' || sceneSnapshot.canvasWidth < 1 || sceneSnapshot.canvasHeight < 1) {
+        throw new Error(`The bundled test scene did not initialize a visible animated WebGL2 canvas: ${JSON.stringify(sceneSnapshot)}`);
+      }
+      const fsrResult = await processBrowserFsrFrames({ slot: 0, tabId: sceneTab.id, frameCount: 3, adapterIndex: null }, { useWarp: true, smokeTest: true });
+      if (!fsrResult.ok || fsrResult.frameCount !== 3 || fsrResult.distinctInputFrames !== 3 || fsrResult.distinctInputResolutions !== 3) {
+        throw new Error(`Browser-capture-to-FSR WARP regression failed: ${fsrResult.error || JSON.stringify(fsrResult)}`);
+      }
+      if (fsrResult.frames.some((frame) => !frame.softwareAdapter || frame.nativeReport?.inputSource !== EXPECTED_INPUT_SOURCE || frame.nativeReport?.processingStatus !== 'PASS')) {
+        throw new Error('The end-to-end browser-frame regression did not validate three WARP-processed capturePage PNG frames.');
+      }
+      const summaryPath = path.join(fsrCaptureOutputRoot(), 'browser-frame-smoke-summary.json');
+      fs.writeFileSync(summaryPath, `${JSON.stringify({
+        status: 'PASS',
+        source: EXPECTED_INPUT_SOURCE,
+        scene: sceneSnapshot,
+        runtime: { electron: process.versions.electron, chromium: process.versions.chrome, node: process.versions.node },
+        chromiumGraphicsImplementation: initialGraphicsDiagnostics.graphicsApiDetails,
+        chromiumGpuDevices: initialGraphicsDiagnostics.gpuDevices,
+        nativeAdapterEnumeration: initialGraphicsDiagnostics.nativeFsrAdapters,
+        scope: fsrResult.scope,
+        softwareAdapter: fsrResult.softwareAdapter,
+        frameCount: fsrResult.frameCount,
+        distinctInputFrames: fsrResult.distinctInputFrames,
+        distinctInputResolutions: fsrResult.distinctInputResolutions,
+        totalRoundTripMs: fsrResult.totalRoundTripMs,
+        frames: fsrResult.frames.map((frame) => ({
+          frame: frame.frame,
+          frameNumber: frame.frameNumber,
+          sceneCanvasWidth: frame.sceneCanvasWidth,
+          sceneCanvasHeight: frame.sceneCanvasHeight,
+          webglRenderer: frame.webglRenderer,
+          inputWidth: frame.inputWidth,
+          inputHeight: frame.inputHeight,
+          outputWidth: frame.outputWidth,
+          outputHeight: frame.outputHeight,
+          inputSha256: frame.inputSha256,
+          adapter: frame.adapter,
+          adapterVendorId: frame.adapterVendorId,
+          softwareAdapter: frame.softwareAdapter,
+          capturePageMs: frame.capturePageMs,
+          nativeProcessMs: frame.nativeProcessMs,
+          nativeGpuTimestampsAvailable: frame.nativeGpuTimestampsAvailable,
+          easuGpuTimeMs: frame.easuGpuTimeMs,
+          rcasGpuTimeMs: frame.rcasGpuTimeMs,
+          nativeEndToEndMs: frame.nativeEndToEndMs,
+          captureToPreviewMs: frame.captureToPreviewMs,
+          checksum: frame.checksum,
+          meanAbsoluteDifferenceFromBilinear: frame.meanAbsoluteDifferenceFromBilinear,
+          inputPath: frame.inputPath,
+          outputPath: frame.outputPath,
+          referencePath: frame.referencePath,
+          reportPath: frame.reportPath,
+          nativeReport: frame.nativeReport,
+        })),
+      }, null, 2)}\n`, { mode: 0o600 });
+      console.log(`[smoke] Real WebContentsView WebGL2 capture → Electron capturePage PNG → AMD FSR 1.0.2 EASU+RCAS D3D12 → PNG validation: PASS; adapter=${fsrResult.frames[0].adapter} (WARP SOFTWARE); frames=${fsrResult.frameCount}; distinct browser input frames=${fsrResult.distinctInputFrames}; distinct capture resolutions=${fsrResult.distinctInputResolutions}; latest ${fsrResult.frames[2].inputWidth}x${fsrResult.frames[2].inputHeight} -> ${fsrResult.frames[2].outputWidth}x${fsrResult.frames[2].outputHeight}; report=${fsrResult.reportPath}; summary=${summaryPath}`);
+    } else {
+      console.log('[smoke] Browser-frame FSR capture: NOT RUN (TRICORE_REQUIRE_FSR_BROWSER_SMOKE=PASS was not set).');
     }
     console.log(`[smoke] Overall local runtime checks: PASS (${Date.now() - startedAt} ms)`);
     app.exit(0);
@@ -743,6 +1295,23 @@ ipcMain.handle('browser:reveal-download', (event, downloadId) => {
   return true;
 });
 ipcMain.handle('browser:graphics-info', async (event) => (isUiSender(event) ? getGraphicsDiagnostics() : null));
+ipcMain.handle('browser:fsr-open-test-scene', (event, payload = {}) => {
+  if (!isUiSender(event)) return { ok: false, error: 'Untrusted sender.' };
+  const slot = validSlot(payload.slot);
+  if (slot < 0) return { ok: false, error: 'Invalid browser core.' };
+  const tab = createTab(slot, homeUrl, { activate: true, fsrTestScene: true });
+  if (!tab) return { ok: false, error: `A core can have at most ${MAX_TABS_PER_CORE} tabs.` };
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('browser:active', slot);
+  return { ok: true, tabId: tab.id };
+});
+ipcMain.handle('browser:fsr-process-test-scene', async (event, payload = {}) => {
+  if (!isUiSender(event)) return { ok: false, error: 'Untrusted sender.' };
+  return processBrowserFsrFrames(payload);
+});
+ipcMain.handle('browser:fsr-cancel-test-scene', (event, jobId) => {
+  if (!isUiSender(event)) return false;
+  return cancelBrowserFsrFrames(jobId);
+});
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -765,6 +1334,12 @@ if (!gotLock) {
     });
   });
 }
+
+app.on('before-quit', () => {
+  if (!activeFsrJob) return;
+  activeFsrJob.cancelled = true;
+  try { activeFsrJob.child?.kill(); } catch { /* The native helper may already have exited. */ }
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

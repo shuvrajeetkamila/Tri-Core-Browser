@@ -83,7 +83,7 @@ test('failed or unimplemented FSR request falls back without claiming frames or 
   });
   const state = resolveGraphicsMode('fsr', { capabilities: report });
   assert.equal(state.state, 'UNSUPPORTED');
-  assert.equal(state.effectiveMode, 'wasm');
+  assert.equal(state.effectiveMode, 'standard');
   assert.equal(state.upscalerActive, false);
   assert.equal(state.processingFrames, false);
   assert.equal(state.processedFrames, 0);
@@ -113,11 +113,28 @@ test('ACTIVE and PROCESSING FRAMES require initialized compatible runtime eviden
 
   const processing = makeReport({
     gpuDevices: [{ vendorId: '0x1002', vendor: 'AMD', name: 'Radeon test device' }],
-    integration: { fsr: { implemented: true, compatible: true, initialized: true, processedFrames: 7 } },
+    integration: { fsr: { implemented: true, compatible: true, initialized: true, active: true, processingFrames: true, processedFrames: 7 } },
   });
   assert.equal(processing.technologies.fsr.state, 'PROCESSING FRAMES');
   assert.equal(processing.technologies.fsr.active, true);
+  assert.equal(processing.technologies.fsr.processingFrames, true);
   assert.equal(processing.technologies.fsr.processedFrames, 7);
+});
+
+test('a completed one-shot frame counter is historical evidence, not an active stream or auto-eligible mode', () => {
+  const report = makeReport({
+    integration: { fsr: { implemented: true, detected: true, compatible: true, initialized: false, processedFrames: 3, automaticEligible: false } },
+  });
+  const feature = report.technologies.fsr;
+  assert.equal(feature.state, 'COMPATIBLE');
+  assert.equal(feature.processedFrames, 3);
+  assert.equal(feature.active, false);
+  assert.equal(feature.processingFrames, false);
+  assert.equal(chooseAutomaticMode(report), 'wasm');
+  const state = resolveGraphicsMode('fsr', { capabilities: report });
+  assert.equal(state.effectiveMode, 'standard');
+  assert.equal(state.upscalerActive, false);
+  assert.equal(state.processingFrames, false);
 });
 
 test('standard mode means Chromium page rendering and no upscaler', () => {

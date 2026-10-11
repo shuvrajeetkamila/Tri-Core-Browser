@@ -37,7 +37,7 @@ jobs:
           $report = Get-Content $reportPath -Raw | ConvertFrom-Json
           if ($report.status -ne 'PASS') { throw "Unexpected native harness status: $($report.status)" }
           if ($report.softwareAdapter -ne $true) { throw 'WARP report incorrectly identifies the software adapter.' }
-          if ($report.physicalGpuGate -ne 'NOT RUN') { throw 'WARP report must keep physical-GPU validation NOT RUN.' }
+          if (-not $report.physicalGpuGate.StartsWith('NOT RUN')) { throw 'WARP report must keep physical-GPU validation NOT RUN.' }
           if ($report.processedFrames -ne 1) { throw 'Native harness did not report exactly one synthetic test frame.' }
           foreach ($image in $report.images) {
             $imagePath = Join-Path $out $image

@@ -11,3 +11,4 @@ dependency-audit.json
 dependency-tree.json
 .DS_Store
 Thumbs.db
+/build/

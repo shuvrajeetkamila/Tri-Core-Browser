@@ -7,6 +7,7 @@
 #include <d3d12.h>
 #include <dxgi1_6.h>
 #include <d3dcompiler.h>
+#include <wincodec.h>
 #include <wrl/client.h>
 
 #include <algorithm>
@@ -19,6 +20,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -31,15 +33,18 @@
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "d3dcompiler.lib")
+#pragma comment(lib, "windowscodecs.lib")
+#pragma comment(lib, "ole32.lib")
 
 using Microsoft::WRL::ComPtr;
 namespace fs = std::filesystem;
 
 namespace {
-constexpr UINT kInputWidth = 320;
-constexpr UINT kInputHeight = 192;
-constexpr UINT kOutputWidth = 640;
-constexpr UINT kOutputHeight = 384;
+constexpr UINT kSyntheticInputWidth = 320;
+constexpr UINT kSyntheticInputHeight = 192;
+constexpr UINT kScaleFactor = 2;
+constexpr UINT kMaximumInputDimension = 4096;
+constexpr uint64_t kMaximumInputPixels = 2ull * 1024ull * 1024ull;
 constexpr UINT kWorkRegion = 16;
 constexpr UINT kConstantCount = 20;
 constexpr UINT kDescriptorCount = 4;
@@ -48,14 +53,38 @@ constexpr DXGI_FORMAT kImageFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 struct Options {
     bool useWarp = false;
     bool hardwareRequested = false;
+    bool listAdapters = false;
+    int adapterIndex = -1;
     fs::path outputDirectory = "fsr1-poc-results";
+    fs::path inputPng;
+    fs::path outputPng;
+    fs::path reportJson;
+};
+
+struct DeviceSupport {
+    std::string featureLevel = "11_0";
+    std::string shaderModel = "unavailable";
+    bool texture2d = false;
+    bool shaderSample = false;
+    bool shaderLoad = false;
+    bool unorderedAccess = false;
+    bool typedUavStore = false;
+    bool supportsFsr = false;
 };
 
 struct Adapter {
     ComPtr<IDXGIAdapter1> dxgi;
     ComPtr<ID3D12Device> device;
     DXGI_ADAPTER_DESC1 description{};
+    DeviceSupport support{};
+    UINT selectionIndex = 0;
     bool software = false;
+};
+
+struct FrameInput {
+    UINT width = 0;
+    UINT height = 0;
+    std::vector<uint8_t> rgba;
 };
 
 struct alignas(16) FsrConstants {
@@ -123,36 +152,99 @@ Options ParseOptions(int argc, wchar_t** argv) {
         const std::wstring argument(argv[index]);
         if (argument == L"--warp") options.useWarp = true;
         else if (argument == L"--hardware") options.hardwareRequested = true;
-        else if (argument == L"--out-dir" && index + 1 < argc) options.outputDirectory = argv[++index];
+        else if (argument == L"--list-adapters") options.listAdapters = true;
+        else if (argument == L"--adapter-index" && index + 1 < argc) {
+            try {
+                const unsigned long parsed = std::stoul(argv[++index]);
+                if (parsed > 1024) throw std::out_of_range("adapter index");
+                options.adapterIndex = static_cast<int>(parsed);
+            } catch (...) {
+                throw std::runtime_error("--adapter-index must be a non-negative integer.");
+            }
+        } else if (argument == L"--out-dir" && index + 1 < argc) options.outputDirectory = argv[++index];
+        else if (argument == L"--input-png" && index + 1 < argc) options.inputPng = argv[++index];
+        else if (argument == L"--output-png" && index + 1 < argc) options.outputPng = argv[++index];
+        else if (argument == L"--report-json" && index + 1 < argc) options.reportJson = argv[++index];
         else if (argument == L"--help" || argument == L"-h") {
-            std::wcout << L"Usage: TriCoreFsr1Poc.exe (--hardware | --warp) [--out-dir PATH]\n"
-                       << L"  --hardware  Require a non-software D3D12 adapter; never falls back to WARP.\n"
-                       << L"  --warp      Explicitly run D3D12 WARP software rendering (not physical-GPU evidence).\n";
+            std::wcout << L"Usage: TriCoreFsr1Poc.exe --list-adapters\n"
+                       << L"       TriCoreFsr1Poc.exe (--hardware [--adapter-index N] | --warp) [--out-dir PATH]\n"
+                       << L"       TriCoreFsr1Poc.exe (--hardware [--adapter-index N] | --warp) --input-png PATH --output-png PATH --report-json PATH\n"
+                       << L"  --list-adapters  Enumerate D3D12 adapters and report FSR1 format/shader support as JSON.\n"
+                       << L"  --hardware       Require an FSR-capable non-software D3D12 adapter; never falls back to WARP.\n"
+                       << L"  --adapter-index  Select the zero-based D3D12 hardware adapter from --list-adapters.\n"
+                       << L"  --warp            Explicitly run the WARP software adapter (never physical-GPU evidence).\n"
+                       << L"  --input-png       Process a PNG screenshot; output resolution is exactly 2x each input dimension.\n"
+                       << L"  --output-png      Write the processed image as PNG.\n"
+                       << L"  --report-json     Write machine-readable adapter, timing, dimensions, and validation details.\n"
+                       << L"This app-owned D3D12 pipeline does not access Chromium textures or other-process memory.\n";
             std::exit(0);
         } else {
             throw std::runtime_error("Unknown or incomplete command-line argument.");
         }
     }
+    if (options.listAdapters) {
+        if (options.useWarp || options.hardwareRequested || options.adapterIndex >= 0 || !options.inputPng.empty() || !options.outputPng.empty() || !options.reportJson.empty()) {
+            throw std::runtime_error("--list-adapters cannot be combined with processing or adapter-selection arguments.");
+        }
+        return options;
+    }
     if (options.useWarp == options.hardwareRequested) {
         throw std::runtime_error("Specify exactly one of --hardware or --warp.");
     }
-    if (options.outputDirectory.is_relative()) options.outputDirectory = fs::absolute(options.outputDirectory);
+    if (options.useWarp && options.adapterIndex >= 0) throw std::runtime_error("--adapter-index cannot be combined with --warp.");
+    const bool anyPngPath = !options.inputPng.empty() || !options.outputPng.empty() || !options.reportJson.empty();
+    const bool allPngPaths = !options.inputPng.empty() && !options.outputPng.empty() && !options.reportJson.empty();
+    if (anyPngPath && !allPngPaths) throw std::runtime_error("PNG processing requires --input-png, --output-png, and --report-json together.");
+    if (options.inputPng.empty() && (options.adapterIndex >= 0)) {
+        // Adapter selection is also valid for the synthetic native regression harness.
+    }
+    if (options.inputPng.empty() && options.outputDirectory.is_relative()) options.outputDirectory = fs::absolute(options.outputDirectory);
+    if (!options.inputPng.empty()) {
+        if (options.inputPng.is_relative()) options.inputPng = fs::absolute(options.inputPng);
+        if (options.outputPng.is_relative()) options.outputPng = fs::absolute(options.outputPng);
+        if (options.reportJson.is_relative()) options.reportJson = fs::absolute(options.reportJson);
+    }
     return options;
 }
 
-Adapter CreateAdapter(bool useWarp) {
+DeviceSupport QueryDeviceSupport(ID3D12Device* device) {
+    DeviceSupport support;
+    D3D12_FEATURE_DATA_FORMAT_SUPPORT format{};
+    format.Format = kImageFormat;
+    const HRESULT formatResult = device->CheckFeatureSupport(D3D12_FEATURE_FORMAT_SUPPORT, &format, sizeof(format));
+    if (SUCCEEDED(formatResult)) {
+        support.texture2d = (format.Support1 & D3D12_FORMAT_SUPPORT1_TEXTURE2D) != 0;
+        support.shaderSample = (format.Support1 & D3D12_FORMAT_SUPPORT1_SHADER_SAMPLE) != 0;
+        support.shaderLoad = (format.Support1 & D3D12_FORMAT_SUPPORT1_SHADER_LOAD) != 0;
+        support.unorderedAccess = (format.Support1 & D3D12_FORMAT_SUPPORT1_UNORDERED_ACCESS) != 0;
+    }
+    D3D12_FEATURE_DATA_FORMAT_SUPPORT2 format2{};
+    format2.InFormat = kImageFormat;
+    const HRESULT format2Result = device->CheckFeatureSupport(D3D12_FEATURE_FORMAT_SUPPORT2, &format2, sizeof(format2));
+    if (SUCCEEDED(format2Result)) support.typedUavStore = (format2.OutFormatSupport2 & D3D12_FORMAT_SUPPORT2_UAV_TYPED_STORE) != 0;
+
+    D3D12_FEATURE_DATA_SHADER_MODEL shaderModel{};
+    shaderModel.HighestShaderModel = D3D_SHADER_MODEL_6_0;
+    const HRESULT shaderResult = device->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &shaderModel, sizeof(shaderModel));
+    if (SUCCEEDED(shaderResult)) {
+        if (shaderModel.HighestShaderModel >= D3D_SHADER_MODEL_6_0) support.shaderModel = "6_0+";
+        else if (shaderModel.HighestShaderModel >= D3D_SHADER_MODEL_5_1) support.shaderModel = "5_1";
+        else if (shaderModel.HighestShaderModel >= D3D_SHADER_MODEL_5_0) support.shaderModel = "5_0";
+        else support.shaderModel = "below_5_0";
+    } else {
+        // D3D12 feature-level 11_0 guarantees the SM5 compute language used by the pinned AMD shaders.
+        support.shaderModel = "5_0 (D3D12 feature-level 11_0 baseline; query unavailable)";
+    }
+    support.supportsFsr = support.texture2d && support.shaderSample && support.shaderLoad &&
+        support.unorderedAccess && support.typedUavStore && support.shaderModel.find("below") != 0;
+    return support;
+}
+
+std::vector<Adapter> EnumerateHardwareAdapters() {
     ComPtr<IDXGIFactory6> factory;
     Check(CreateDXGIFactory2(0, IID_PPV_ARGS(&factory)), "CreateDXGIFactory2");
-
-    Adapter selected;
-    if (useWarp) {
-        Check(factory->EnumWarpAdapter(IID_PPV_ARGS(&selected.dxgi)), "EnumWarpAdapter");
-        selected.software = true;
-        Check(selected.dxgi->GetDesc1(&selected.description), "GetDesc1(WARP)");
-        Check(D3D12CreateDevice(selected.dxgi.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&selected.device)), "D3D12CreateDevice(WARP)");
-        return selected;
-    }
-
+    std::vector<Adapter> adapters;
+    UINT selectionIndex = 0;
     for (UINT index = 0;; ++index) {
         ComPtr<IDXGIAdapter1> candidate;
         const HRESULT enumResult = factory->EnumAdapters1(index, &candidate);
@@ -163,13 +255,73 @@ Adapter CreateAdapter(bool useWarp) {
         if (description.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) continue;
         ComPtr<ID3D12Device> device;
         if (FAILED(D3D12CreateDevice(candidate.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device)))) continue;
-        selected.dxgi = std::move(candidate);
-        selected.device = std::move(device);
-        selected.description = description;
-        selected.software = false;
+        Adapter adapter;
+        adapter.dxgi = std::move(candidate);
+        adapter.device = std::move(device);
+        adapter.description = description;
+        adapter.support = QueryDeviceSupport(adapter.device.Get());
+        adapter.selectionIndex = selectionIndex++;
+        adapter.software = false;
+        adapters.push_back(std::move(adapter));
+    }
+    return adapters;
+}
+
+void PrintAdapters() {
+    const auto adapters = EnumerateHardwareAdapters();
+    ComPtr<IDXGIFactory6> factory;
+    Check(CreateDXGIFactory2(0, IID_PPV_ARGS(&factory)), "CreateDXGIFactory2");
+    ComPtr<IDXGIAdapter> warp;
+    const bool warpAvailable = SUCCEEDED(factory->EnumWarpAdapter(IID_PPV_ARGS(&warp)));
+    std::cout << "{\"status\":\"PASS\",\"api\":\"Direct3D 12\",\"warpAvailable\":"
+              << (warpAvailable ? "true" : "false") << ",\"adapters\":[";
+    for (size_t index = 0; index < adapters.size(); ++index) {
+        const Adapter& adapter = adapters[index];
+        if (index) std::cout << ',';
+        std::cout << "{\"index\":" << adapter.selectionIndex
+                  << ",\"name\":\"" << JsonEscape(Utf8(adapter.description.Description)) << '"'
+                  << ",\"vendorId\":\"0x" << std::hex << std::setw(4) << std::setfill('0') << adapter.description.VendorId << std::dec << '"'
+                  << ",\"deviceId\":\"0x" << std::hex << std::setw(4) << std::setfill('0') << adapter.description.DeviceId << std::dec << '"'
+                  << ",\"dedicatedVideoMemoryBytes\":" << adapter.description.DedicatedVideoMemory
+                  << ",\"softwareAdapter\":false"
+                  << ",\"featureLevel\":\"" << adapter.support.featureLevel << '"'
+                  << ",\"shaderModel\":\"" << JsonEscape(adapter.support.shaderModel) << '"'
+                  << ",\"supports\":{\"r8g8b8a8Texture2D\":" << (adapter.support.texture2d ? "true" : "false")
+                  << ",\"shaderSample\":" << (adapter.support.shaderSample ? "true" : "false")
+                  << ",\"shaderLoad\":" << (adapter.support.shaderLoad ? "true" : "false")
+                  << ",\"unorderedAccess\":" << (adapter.support.unorderedAccess ? "true" : "false")
+                  << ",\"typedUavStore\":" << (adapter.support.typedUavStore ? "true" : "false")
+                  << "},\"fsr1Compatible\":" << (adapter.support.supportsFsr ? "true" : "false") << '}';
+    }
+    std::cout << "]}\n";
+}
+
+Adapter CreateAdapter(bool useWarp, int requestedIndex) {
+    if (useWarp) {
+        ComPtr<IDXGIFactory6> factory;
+        Check(CreateDXGIFactory2(0, IID_PPV_ARGS(&factory)), "CreateDXGIFactory2");
+        Adapter selected;
+        Check(factory->EnumWarpAdapter(IID_PPV_ARGS(&selected.dxgi)), "EnumWarpAdapter");
+        selected.software = true;
+        Check(selected.dxgi->GetDesc1(&selected.description), "GetDesc1(WARP)");
+        Check(D3D12CreateDevice(selected.dxgi.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&selected.device)), "D3D12CreateDevice(WARP)");
+        selected.support = QueryDeviceSupport(selected.device.Get());
+        if (!selected.support.supportsFsr) throw std::runtime_error("NOT RUN: the WARP adapter does not expose the format/shader features required by FSR1.");
         return selected;
     }
-    throw std::runtime_error("NOT RUN: no non-software D3D12 hardware adapter is available. Use --warp only for a software pipeline smoke test.");
+
+    const auto adapters = EnumerateHardwareAdapters();
+    if (requestedIndex >= 0) {
+        const auto selected = std::find_if(adapters.begin(), adapters.end(), [requestedIndex](const Adapter& adapter) {
+            return adapter.selectionIndex == static_cast<UINT>(requestedIndex);
+        });
+        if (selected == adapters.end()) throw std::runtime_error("NOT RUN: the requested D3D12 adapter index was not enumerated.");
+        if (!selected->support.supportsFsr) throw std::runtime_error("NOT RUN: the selected adapter lacks one or more required FSR1 D3D12 format/shader features.");
+        return *selected;
+    }
+    const auto selected = std::find_if(adapters.begin(), adapters.end(), [](const Adapter& adapter) { return adapter.support.supportsFsr; });
+    if (selected != adapters.end()) return *selected;
+    throw std::runtime_error("NOT RUN: no FSR-capable non-software D3D12 hardware adapter is available. Use --warp only for a software pipeline smoke test.");
 }
 
 std::string DriverInterfaceVersion(const Adapter& adapter) {
@@ -237,12 +389,12 @@ void Transition(ID3D12GraphicsCommandList* commandList, ID3D12Resource* resource
     commandList->ResourceBarrier(1, &barrier);
 }
 
-std::vector<uint8_t> MakeInputScene() {
-    std::vector<uint8_t> pixels(static_cast<size_t>(kInputWidth) * kInputHeight * 4);
-    for (UINT y = 0; y < kInputHeight; ++y) {
-        for (UINT x = 0; x < kInputWidth; ++x) {
-            const bool left = x < kInputWidth / 2;
-            const bool upper = y < kInputHeight / 2;
+std::vector<uint8_t> MakeInputScene(UINT width, UINT height) {
+    std::vector<uint8_t> pixels(static_cast<size_t>(width) * height * 4);
+    for (UINT y = 0; y < height; ++y) {
+        for (UINT x = 0; x < width; ++x) {
+            const bool left = x < width / 2;
+            const bool upper = y < height / 2;
             const bool checker = ((x / 8) + (y / 8)) % 2 == 0;
             uint8_t red = static_cast<uint8_t>(left ? 38 : 222);
             uint8_t green = static_cast<uint8_t>(upper ? 45 : 210);
@@ -250,7 +402,7 @@ std::vector<uint8_t> MakeInputScene() {
             const int diagonalDistance = std::abs(static_cast<int>(y) - static_cast<int>(x * 3 / 5));
             if (diagonalDistance <= 1) { red = 250; green = 245; blue = 40; }
             if ((x % 32) == 0 || (y % 32) == 0) { red = 235; green = 50; blue = 60; }
-            const size_t offset = (static_cast<size_t>(y) * kInputWidth + x) * 4;
+            const size_t offset = (static_cast<size_t>(y) * width + x) * 4;
             pixels[offset + 0] = red;
             pixels[offset + 1] = green;
             pixels[offset + 2] = blue;
@@ -260,23 +412,24 @@ std::vector<uint8_t> MakeInputScene() {
     return pixels;
 }
 
-std::vector<uint8_t> MakeBilinearReference(const std::vector<uint8_t>& input) {
-    std::vector<uint8_t> output(static_cast<size_t>(kOutputWidth) * kOutputHeight * 4);
-    for (UINT y = 0; y < kOutputHeight; ++y) {
-        const double sourceY = std::clamp((static_cast<double>(y) + 0.5) * kInputHeight / kOutputHeight - 0.5, 0.0, static_cast<double>(kInputHeight - 1));
+std::vector<uint8_t> MakeBilinearReference(const std::vector<uint8_t>& input, UINT inputWidth, UINT inputHeight,
+                                           UINT outputWidth, UINT outputHeight) {
+    std::vector<uint8_t> output(static_cast<size_t>(outputWidth) * outputHeight * 4);
+    for (UINT y = 0; y < outputHeight; ++y) {
+        const double sourceY = std::clamp((static_cast<double>(y) + 0.5) * inputHeight / outputHeight - 0.5, 0.0, static_cast<double>(inputHeight - 1));
         const UINT y0 = static_cast<UINT>(std::floor(sourceY));
-        const UINT y1 = std::min(y0 + 1, kInputHeight - 1);
+        const UINT y1 = std::min(y0 + 1, inputHeight - 1);
         const double fy = sourceY - y0;
-        for (UINT x = 0; x < kOutputWidth; ++x) {
-            const double sourceX = std::clamp((static_cast<double>(x) + 0.5) * kInputWidth / kOutputWidth - 0.5, 0.0, static_cast<double>(kInputWidth - 1));
+        for (UINT x = 0; x < outputWidth; ++x) {
+            const double sourceX = std::clamp((static_cast<double>(x) + 0.5) * inputWidth / outputWidth - 0.5, 0.0, static_cast<double>(inputWidth - 1));
             const UINT x0 = static_cast<UINT>(std::floor(sourceX));
-            const UINT x1 = std::min(x0 + 1, kInputWidth - 1);
+            const UINT x1 = std::min(x0 + 1, inputWidth - 1);
             const double fx = sourceX - x0;
-            const size_t outOffset = (static_cast<size_t>(y) * kOutputWidth + x) * 4;
-            const size_t p00 = (static_cast<size_t>(y0) * kInputWidth + x0) * 4;
-            const size_t p10 = (static_cast<size_t>(y0) * kInputWidth + x1) * 4;
-            const size_t p01 = (static_cast<size_t>(y1) * kInputWidth + x0) * 4;
-            const size_t p11 = (static_cast<size_t>(y1) * kInputWidth + x1) * 4;
+            const size_t outOffset = (static_cast<size_t>(y) * outputWidth + x) * 4;
+            const size_t p00 = (static_cast<size_t>(y0) * inputWidth + x0) * 4;
+            const size_t p10 = (static_cast<size_t>(y0) * inputWidth + x1) * 4;
+            const size_t p01 = (static_cast<size_t>(y1) * inputWidth + x0) * 4;
+            const size_t p11 = (static_cast<size_t>(y1) * inputWidth + x1) * 4;
             for (size_t channel = 0; channel < 3; ++channel) {
                 const double top = input[p00 + channel] * (1.0 - fx) + input[p10 + channel] * fx;
                 const double bottom = input[p01 + channel] * (1.0 - fx) + input[p11 + channel] * fx;
@@ -333,6 +486,67 @@ void WriteBmp(const fs::path& path, UINT width, UINT height, const std::vector<u
         file.write(bgra, sizeof(bgra));
     }
     if (!file) throw std::runtime_error("Failed while writing image capture: " + path.string());
+}
+
+FrameInput ReadPng(const fs::path& path) {
+    if (!fs::is_regular_file(path)) throw std::runtime_error("The browser-captured PNG does not exist or is not a regular file.");
+    ComPtr<IWICImagingFactory> factory;
+    Check(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory)), "CoCreateInstance(WIC imaging factory)");
+    ComPtr<IWICBitmapDecoder> decoder;
+    Check(factory->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnLoad, &decoder), "CreateDecoderFromFilename(PNG)");
+    ComPtr<IWICBitmapFrameDecode> frame;
+    Check(decoder->GetFrame(0, &frame), "GetFrame(PNG)");
+
+    FrameInput input;
+    Check(frame->GetSize(&input.width, &input.height), "GetSize(PNG)");
+    const uint64_t pixels = static_cast<uint64_t>(input.width) * input.height;
+    if (input.width == 0 || input.height == 0 || input.width > kMaximumInputDimension || input.height > kMaximumInputDimension || pixels > kMaximumInputPixels) {
+        throw std::runtime_error("NOT RUN: the captured PNG dimensions exceed the safe FSR1 input limit (maximum 4096 per side and 2,097,152 pixels).");
+    }
+
+    ComPtr<IWICFormatConverter> converter;
+    Check(factory->CreateFormatConverter(&converter), "CreateFormatConverter(PNG input)");
+    Check(converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppRGBA, WICBitmapDitherTypeNone, nullptr, 0.0, WICBitmapPaletteTypeCustom), "Initialize(PNG RGBA converter)");
+    const UINT stride = input.width * 4;
+    const UINT byteCount = static_cast<UINT>(pixels * 4);
+    input.rgba.resize(byteCount);
+    Check(converter->CopyPixels(nullptr, stride, byteCount, input.rgba.data()), "CopyPixels(PNG input)");
+    return input;
+}
+
+void WritePng(const fs::path& path, UINT width, UINT height, const std::vector<uint8_t>& rgba) {
+    if (rgba.size() != static_cast<size_t>(width) * height * 4) throw std::runtime_error("Image byte count does not match PNG dimensions.");
+    if (!path.parent_path().empty()) fs::create_directories(path.parent_path());
+    ComPtr<IWICImagingFactory> factory;
+    Check(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory)), "CoCreateInstance(WIC imaging factory)");
+    ComPtr<IWICStream> stream;
+    Check(factory->CreateStream(&stream), "CreateStream(PNG output)");
+    Check(stream->InitializeFromFilename(path.c_str(), GENERIC_WRITE), "InitializeFromFilename(PNG output)");
+    ComPtr<IWICBitmapEncoder> encoder;
+    Check(factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder), "CreateEncoder(PNG)");
+    Check(encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache), "Initialize(PNG encoder)");
+    ComPtr<IWICBitmapFrameEncode> frame;
+    ComPtr<IPropertyBag2> properties;
+    Check(encoder->CreateNewFrame(&frame, &properties), "CreateNewFrame(PNG)");
+    Check(frame->Initialize(properties.Get()), "Initialize(PNG frame)");
+    Check(frame->SetSize(width, height), "SetSize(PNG frame)");
+
+    WICPixelFormatGUID pixelFormat = GUID_WICPixelFormat32bppBGRA;
+    Check(frame->SetPixelFormat(&pixelFormat), "SetPixelFormat(PNG frame)");
+    ComPtr<IWICBitmap> sourceBitmap;
+    Check(factory->CreateBitmapFromMemory(width, height, GUID_WICPixelFormat32bppRGBA, width * 4,
+        static_cast<UINT>(rgba.size()), const_cast<BYTE*>(rgba.data()), &sourceBitmap), "CreateBitmapFromMemory(PNG source)");
+    ComPtr<IWICFormatConverter> converter;
+    Check(factory->CreateFormatConverter(&converter), "CreateFormatConverter(PNG output)");
+    Check(converter->Initialize(sourceBitmap.Get(), pixelFormat, WICBitmapDitherTypeNone, nullptr, 0.0, WICBitmapPaletteTypeCustom), "Initialize(PNG output converter)");
+    Check(frame->WriteSource(converter.Get(), nullptr), "WriteSource(PNG frame)");
+    Check(frame->Commit(), "Commit(PNG frame)");
+    Check(encoder->Commit(), "Commit(PNG encoder)");
+}
+
+std::string PathUtf8(const fs::path& path) {
+    const auto value = path.generic_u8string();
+    return std::string(value.begin(), value.end());
 }
 
 ImageMetrics MeasureImage(const std::vector<uint8_t>& output, const std::vector<uint8_t>& baseline) {
@@ -482,23 +696,41 @@ D3D12_GPU_DESCRIPTOR_HANDLE GpuDescriptor(ID3D12DescriptorHeap* heap, UINT descr
     return handle;
 }
 
-void SaveReport(const fs::path& filePath, const Adapter& adapter, const std::string& driverVersion,
+void SaveReport(const fs::path& reportPath, const Adapter& adapter, const std::string& driverVersion,
+                bool browserCapture, const fs::path& inputPath, const fs::path& referencePath, const fs::path& outputPath,
+                UINT inputWidth, UINT inputHeight, UINT outputWidth, UINT outputHeight,
                 bool gpuTimersAvailable, double easuGpuMs, double rcasGpuMs, double cpuSubmitWaitMs,
-                const ImageMetrics& metrics, uint64_t processedFrames) {
+                double totalNativeMs, const ImageMetrics& metrics, uint64_t processedFrames) {
     const std::string adapterName = Utf8(adapter.description.Description);
-    std::ofstream json(filePath, std::ios::binary);
+    if (!reportPath.parent_path().empty()) fs::create_directories(reportPath.parent_path());
+    std::ofstream json(reportPath, std::ios::binary);
     if (!json) throw std::runtime_error("Could not write native FSR report JSON.");
+    const std::string inputCapturePath = PathUtf8(inputPath);
+    const std::string referenceCapturePath = PathUtf8(referencePath);
+    const std::string outputCapturePath = PathUtf8(outputPath);
+    const std::string inputSource = browserCapture ? "Electron WebContents.capturePage() PNG" : "deterministic synthetic native pattern";
     json << "{\n"
          << "  \"status\": \"PASS\",\n"
          << "  \"technology\": \"AMD FidelityFX FSR 1.0.2 EASU + RCAS\",\n"
          << "  \"api\": \"Direct3D 12\",\n"
+         << "  \"inputSource\": \"" << JsonEscape(inputSource) << "\",\n"
+         << "  \"browserGraphicsPath\": \"" << (browserCapture ? "Chromium WebContentsView -> Electron capturePage PNG CPU readback -> app-owned D3D12 upload; no shared texture or compositor interop" : "not applicable to native synthetic regression") << "\",\n"
          << "  \"adapter\": \"" << JsonEscape(adapterName) << "\",\n"
+         << "  \"adapterIndex\": " << (adapter.software ? -1 : static_cast<int>(adapter.selectionIndex)) << ",\n"
          << "  \"adapterVendorId\": \"0x" << std::hex << std::setw(4) << std::setfill('0') << adapter.description.VendorId << std::dec << "\",\n"
+         << "  \"adapterDeviceId\": \"0x" << std::hex << std::setw(4) << std::setfill('0') << adapter.description.DeviceId << std::dec << "\",\n"
+         << "  \"dedicatedVideoMemoryBytes\": " << adapter.description.DedicatedVideoMemory << ",\n"
          << "  \"softwareAdapter\": " << (adapter.software ? "true" : "false") << ",\n"
-         << "  \"adapterSelection\": \"" << (adapter.software ? "D3D12 WARP software adapter" : "non-software D3D12 adapter; physical identity must be reviewed") << "\",\n"
+         << "  \"adapterType\": \"" << (adapter.software ? "D3D12 WARP software adapter" : "non-software D3D12 adapter (physical identity requires review)") << "\",\n"
+         << "  \"featureLevel\": \"" << adapter.support.featureLevel << "\",\n"
+         << "  \"shaderModel\": \"" << JsonEscape(adapter.support.shaderModel) << "\",\n"
+         << "  \"fsr1RequiredFeaturesSupported\": " << (adapter.support.supportsFsr ? "true" : "false") << ",\n"
          << "  \"runtime\": \"AMD FSR 1.0.2 source; pinned upstream commit a21ffb8f6c13233ba336352bdff293894c706575\",\n"
-         << "  \"input\": {\"width\": " << kInputWidth << ", \"height\": " << kInputHeight << "},\n"
-         << "  \"output\": {\"width\": " << kOutputWidth << ", \"height\": " << kOutputHeight << "},\n"
+         << "  \"initializationStatus\": \"PASS\",\n"
+         << "  \"processingStatus\": \"PASS\",\n"
+         << "  \"input\": {\"width\": " << inputWidth << ", \"height\": " << inputHeight << "},\n"
+         << "  \"output\": {\"width\": " << outputWidth << ", \"height\": " << outputHeight << "},\n"
+         << "  \"scaleFactor\": " << kScaleFactor << ",\n"
          << "  \"processedFrames\": " << processedFrames << ",\n"
          << "  \"gpuTimestampsAvailable\": " << (gpuTimersAvailable ? "true" : "false") << ",\n"
          << "  \"easuGpuTimeMs\": ";
@@ -509,12 +741,18 @@ void SaveReport(const fs::path& filePath, const Adapter& adapter, const std::str
     else json << "null";
     json << ",\n"
          << "  \"cpuSubmitAndFenceWaitMs\": " << std::fixed << std::setprecision(6) << cpuSubmitWaitMs << ",\n"
+         << "  \"nativeEndToEndMs\": " << std::fixed << std::setprecision(6) << totalNativeMs << ",\n"
          << "  \"meanAbsoluteDifferenceFromBilinear\": " << std::fixed << std::setprecision(6) << metrics.meanAbsoluteDifferenceFromBilinear << ",\n"
          << "  \"sampledRedChannelValues\": " << metrics.distinctSampledColors << ",\n"
+         << "  \"minimumOutputSample\": " << static_cast<unsigned>(metrics.minimum) << ",\n"
+         << "  \"maximumOutputSample\": " << static_cast<unsigned>(metrics.maximum) << ",\n"
          << "  \"checksum\": " << metrics.checksum << ",\n"
-         << "  \"images\": [\"input-scene.bmp\", \"bilinear-reference.bmp\", \"fsr1-easu-rcas.bmp\"],\n"
-         << "  \"physicalGpuGate\": \"" << (adapter.software ? "NOT RUN" : "REVIEW REQUIRED (verify the non-software adapter is physical)") << "\",\n"
-         << "  \"amdVendorGate\": \"" << (adapter.description.VendorId == 0x1002 ? "AMD vendor ID reported; physical device identity still requires review" : "NOT RUN (adapter vendor ID is not AMD)") << "\",\n"
+         << "  \"inputCapturePath\": \"" << JsonEscape(inputCapturePath) << "\",\n"
+         << "  \"bilinearReferencePath\": \"" << JsonEscape(referenceCapturePath) << "\",\n"
+         << "  \"processedCapturePath\": \"" << JsonEscape(outputCapturePath) << "\",\n"
+         << "  \"images\": [\"" << JsonEscape(PathUtf8(inputPath.filename())) << "\", \"" << JsonEscape(PathUtf8(referencePath.filename())) << "\", \"" << JsonEscape(PathUtf8(outputPath.filename())) << "\"],\n"
+         << "  \"physicalGpuGate\": \"" << (adapter.software ? "NOT RUN (WARP is software)" : "REVIEW REQUIRED (verify non-software adapter is physical)") << "\",\n"
+         << "  \"amdVendorGate\": \"" << (adapter.description.VendorId == 0x1002 ? "AMD vendor ID reported; physical identity still requires review" : "NOT RUN (adapter vendor ID is not AMD)") << "\",\n"
          << "  \"driverVersion\": ";
     if (driverVersion.empty()) json << "null";
     else json << "\"" << JsonEscape(driverVersion) << "\"";
@@ -524,44 +762,85 @@ void SaveReport(const fs::path& filePath, const Adapter& adapter, const std::str
          << "}\n";
     if (!json) throw std::runtime_error("Failed while writing native FSR report JSON.");
 
-    std::ofstream report(filePath.parent_path() / "FSR1_NATIVE_REPORT.txt", std::ios::binary);
+    std::ofstream report(reportPath.parent_path() / "FSR1_NATIVE_REPORT.txt", std::ios::binary);
     if (!report) throw std::runtime_error("Could not write native FSR report text.");
     report << "TRI-CORE BROWSER — AMD FSR 1 NATIVE PROOF-OF-CONCEPT\n"
            << "Pipeline: AMD official FSR 1.0.2 EASU upscaling pass followed by RCAS sharpening pass.\n"
            << "API: Direct3D 12; input/output are app-owned GPU textures.\n"
+           << "Input source: " << inputSource << "\n"
+           << "Browser rendering path: " << (browserCapture ? "a WebContentsView screenshot was read back through Electron capturePage PNG and re-uploaded; this is not shared-texture or compositor interop." : "not applicable; this regression frame is synthetic.") << "\n"
            << "Adapter: " << adapterName << "\n"
            << "Vendor ID: 0x" << std::hex << adapter.description.VendorId << std::dec << "\n"
+           << "Device ID: 0x" << std::hex << adapter.description.DeviceId << std::dec << "\n"
            << "Adapter type: " << (adapter.software ? "WARP software adapter" : "non-software DXGI adapter (physical identity unverified)") << "\n"
-           << "Input resolution: " << kInputWidth << " x " << kInputHeight << "\n"
-           << "Output resolution: " << kOutputWidth << " x " << kOutputHeight << "\n"
+           << "D3D12 feature level: " << adapter.support.featureLevel << "; shader model: " << adapter.support.shaderModel << "\n"
+           << "FSR initialization: PASS; frame processing: PASS\n"
+           << "Input resolution: " << inputWidth << " x " << inputHeight << "\n"
+           << "Output resolution: " << outputWidth << " x " << outputHeight << "\n"
            << "Processed test frames: " << processedFrames << "\n";
     if (gpuTimersAvailable) {
         report << "EASU GPU timestamp: " << std::fixed << std::setprecision(6) << easuGpuMs << " ms\n"
-               << "RCAS GPU timestamp: " << std::fixed << std::setprecision(6) << rcasGpuMs << " ms\n";
+               << "RCAS GPU timestamp: " << rcasGpuMs << " ms\n";
     } else {
         report << "GPU timestamps: unavailable from this D3D12 command queue (not reported as zero).\n";
     }
     report << "CPU submit + fence wait: " << std::fixed << std::setprecision(6) << cpuSubmitWaitMs << " ms\n"
-           << "Mean absolute difference from CPU bilinear reference: " << std::fixed << std::setprecision(6) << metrics.meanAbsoluteDifferenceFromBilinear << "\n"
-           << "Captures: input-scene.bmp, bilinear-reference.bmp, fsr1-easu-rcas.bmp\n"
+           << "Native process end-to-end: " << totalNativeMs << " ms\n"
+           << "Mean absolute difference from CPU bilinear reference: " << metrics.meanAbsoluteDifferenceFromBilinear << "\n"
+           << "Input capture: " << inputCapturePath << "\n"
+           << "Bilinear reference: " << referenceCapturePath << "\n"
+           << "Processed capture: " << outputCapturePath << "\n"
            << "Physical-GPU acceptance: " << (adapter.software ? "NOT RUN (WARP is software, not a physical GPU)." : "REVIEW REQUIRED (confirm the adapter is a physical device before accepting this gate).") << "\n"
            << "AMD vendor ID: " << (adapter.description.VendorId == 0x1002 ? "reported; physical device identity still requires review." : "not reported (vendor-specific AMD hardware gate NOT RUN).") << "\n"
            << "Driver interface version: " << (driverVersion.empty() ? "unavailable" : driverVersion + " (raw DXGI user-mode interface version)") << "\n"
-           << "Automatic driver installation: NO.\n"
-           << "The frame is a deterministic synthetic pattern, not a browser page or game.\n";
+           << "Automatic driver installation: NO.\n";
     if (!report) throw std::runtime_error("Failed while writing native FSR report text.");
 }
 
 void Run(const Options& options) {
-    fs::create_directories(options.outputDirectory);
-    const Adapter adapter = CreateAdapter(options.useWarp);
+    const auto nativeStart = std::chrono::steady_clock::now();
+    const bool browserCapture = !options.inputPng.empty();
+    fs::path inputPath;
+    fs::path referencePath;
+    fs::path outputPath;
+    fs::path reportPath;
+    FrameInput frame;
+
+    if (browserCapture) {
+        inputPath = options.inputPng;
+        outputPath = options.outputPng;
+        reportPath = options.reportJson;
+        referencePath = options.outputPng.parent_path() /
+            (options.outputPng.stem().wstring() + L"-bilinear-reference.png");
+        frame = ReadPng(inputPath);
+    } else {
+        fs::create_directories(options.outputDirectory);
+        frame.width = kSyntheticInputWidth;
+        frame.height = kSyntheticInputHeight;
+        frame.rgba = MakeInputScene(frame.width, frame.height);
+        inputPath = options.outputDirectory / "input-scene.bmp";
+        referencePath = options.outputDirectory / "bilinear-reference.bmp";
+        outputPath = options.outputDirectory / "fsr1-easu-rcas.bmp";
+        reportPath = options.outputDirectory / "fsr1-native-report.json";
+    }
+
+    const UINT inputWidth = frame.width;
+    const UINT inputHeight = frame.height;
+    if (inputWidth > std::numeric_limits<UINT>::max() / kScaleFactor || inputHeight > std::numeric_limits<UINT>::max() / kScaleFactor) {
+        throw std::runtime_error("NOT RUN: input dimensions overflow the configured FSR1 output scale.");
+    }
+    const UINT outputWidth = inputWidth * kScaleFactor;
+    const UINT outputHeight = inputHeight * kScaleFactor;
+    const Adapter adapter = CreateAdapter(options.useWarp, options.adapterIndex);
     const fs::path shaderPath = ExecutableDirectory() / "amd" / "FSR_Pass.hlsl";
     if (!fs::exists(shaderPath)) throw std::runtime_error("FSR_Pass.hlsl or its licensed AMD includes are missing beside the executable.");
 
-    const auto inputPixels = MakeInputScene();
-    const auto bilinearReference = MakeBilinearReference(inputPixels);
-    WriteBmp(options.outputDirectory / "input-scene.bmp", kInputWidth, kInputHeight, inputPixels);
-    WriteBmp(options.outputDirectory / "bilinear-reference.bmp", kOutputWidth, kOutputHeight, bilinearReference);
+    const auto bilinearReference = MakeBilinearReference(frame.rgba, inputWidth, inputHeight, outputWidth, outputHeight);
+    if (browserCapture) WritePng(referencePath, outputWidth, outputHeight, bilinearReference);
+    else {
+        WriteBmp(inputPath, inputWidth, inputHeight, frame.rgba);
+        WriteBmp(referencePath, outputWidth, outputHeight, bilinearReference);
+    }
 
     ComPtr<ID3D12CommandQueue> queue;
     D3D12_COMMAND_QUEUE_DESC queueDesc{};
@@ -572,11 +851,11 @@ void Run(const Options& options) {
     ComPtr<ID3D12GraphicsCommandList> commandList;
     Check(adapter.device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, allocator.Get(), nullptr, IID_PPV_ARGS(&commandList)), "CreateCommandList");
 
-    auto input = CreateTexture(adapter.device.Get(), kInputWidth, kInputHeight, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
-    auto intermediate = CreateTexture(adapter.device.Get(), kOutputWidth, kOutputHeight, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-    auto output = CreateTexture(adapter.device.Get(), kOutputWidth, kOutputHeight, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    auto input = CreateTexture(adapter.device.Get(), inputWidth, inputHeight, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+    auto intermediate = CreateTexture(adapter.device.Get(), outputWidth, outputHeight, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    auto output = CreateTexture(adapter.device.Get(), outputWidth, outputHeight, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
-    const D3D12_RESOURCE_DESC inputDesc = TextureDescription(kInputWidth, kInputHeight, D3D12_RESOURCE_FLAG_NONE);
+    const D3D12_RESOURCE_DESC inputDesc = TextureDescription(inputWidth, inputHeight, D3D12_RESOURCE_FLAG_NONE);
     D3D12_PLACED_SUBRESOURCE_FOOTPRINT inputFootprint{};
     UINT inputRows = 0;
     UINT64 inputRowSize = 0;
@@ -586,10 +865,10 @@ void Run(const Options& options) {
     void* uploadMemory = nullptr;
     const D3D12_RANGE noRead{0, 0};
     Check(upload->Map(0, &noRead, &uploadMemory), "Map(input upload buffer)");
-    for (UINT row = 0; row < kInputHeight; ++row) {
-        const auto* source = inputPixels.data() + static_cast<size_t>(row) * kInputWidth * 4;
+    for (UINT row = 0; row < inputHeight; ++row) {
+        const auto* source = frame.rgba.data() + static_cast<size_t>(row) * inputWidth * 4;
         auto* destination = static_cast<uint8_t*>(uploadMemory) + inputFootprint.Offset + static_cast<size_t>(row) * inputFootprint.Footprint.RowPitch;
-        std::copy_n(source, static_cast<size_t>(kInputWidth) * 4, destination);
+        std::copy_n(source, static_cast<size_t>(inputWidth) * 4, destination);
     }
     upload->Unmap(0, nullptr);
 
@@ -632,15 +911,15 @@ void Run(const Options& options) {
     FsrConstants easuConstants{};
     FsrEasuCon(
         &easuConstants.values[0], &easuConstants.values[4], &easuConstants.values[8], &easuConstants.values[12],
-        static_cast<AF1>(kInputWidth), static_cast<AF1>(kInputHeight),
-        static_cast<AF1>(kInputWidth), static_cast<AF1>(kInputHeight),
-        static_cast<AF1>(kOutputWidth), static_cast<AF1>(kOutputHeight));
+        static_cast<AF1>(inputWidth), static_cast<AF1>(inputHeight),
+        static_cast<AF1>(inputWidth), static_cast<AF1>(inputHeight),
+        static_cast<AF1>(outputWidth), static_cast<AF1>(outputHeight));
     commandList->SetPipelineState(easuPipeline.Get());
     commandList->SetComputeRoot32BitConstants(0, kConstantCount, easuConstants.values, 0);
     commandList->SetComputeRootDescriptorTable(1, GpuDescriptor(descriptorHeap.Get(), descriptorIncrement, 0));
     commandList->SetComputeRootDescriptorTable(2, GpuDescriptor(descriptorHeap.Get(), descriptorIncrement, 2));
     commandList->EndQuery(queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0);
-    commandList->Dispatch((kOutputWidth + kWorkRegion - 1) / kWorkRegion, (kOutputHeight + kWorkRegion - 1) / kWorkRegion, 1);
+    commandList->Dispatch((outputWidth + kWorkRegion - 1) / kWorkRegion, (outputHeight + kWorkRegion - 1) / kWorkRegion, 1);
     commandList->EndQuery(queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 1);
     Transition(commandList.Get(), intermediate.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 
@@ -651,11 +930,11 @@ void Run(const Options& options) {
     commandList->SetComputeRootDescriptorTable(1, GpuDescriptor(descriptorHeap.Get(), descriptorIncrement, 1));
     commandList->SetComputeRootDescriptorTable(2, GpuDescriptor(descriptorHeap.Get(), descriptorIncrement, 3));
     commandList->EndQuery(queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 2);
-    commandList->Dispatch((kOutputWidth + kWorkRegion - 1) / kWorkRegion, (kOutputHeight + kWorkRegion - 1) / kWorkRegion, 1);
+    commandList->Dispatch((outputWidth + kWorkRegion - 1) / kWorkRegion, (outputHeight + kWorkRegion - 1) / kWorkRegion, 1);
     commandList->EndQuery(queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 3);
     Transition(commandList.Get(), output.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
 
-    const D3D12_RESOURCE_DESC outputDesc = TextureDescription(kOutputWidth, kOutputHeight, D3D12_RESOURCE_FLAG_NONE);
+    const D3D12_RESOURCE_DESC outputDesc = TextureDescription(outputWidth, outputHeight, D3D12_RESOURCE_FLAG_NONE);
     D3D12_PLACED_SUBRESOURCE_FOOTPRINT outputFootprint{};
     UINT outputRows = 0;
     UINT64 outputRowSize = 0;
@@ -673,6 +952,7 @@ void Run(const Options& options) {
     commandList->CopyTextureRegion(&readbackDestination, 0, 0, 0, &outputSource, nullptr);
     commandList->ResolveQueryData(queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0, 4, queryReadback.Get(), 0);
     Check(commandList->Close(), "Close command list");
+    std::cout << "FSR1_INITIALIZED\n" << std::flush;
 
     ComPtr<ID3D12Fence> fence;
     Check(adapter.device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence)), "CreateFence");
@@ -680,6 +960,7 @@ void Run(const Options& options) {
     if (!fenceEvent) throw std::runtime_error("CreateEventW for D3D12 fence failed.");
     ID3D12CommandList* commandLists[] = { commandList.Get() };
     const auto cpuStart = std::chrono::steady_clock::now();
+    std::cout << "FSR1_PROCESSING\n" << std::flush;
     queue->ExecuteCommandLists(1, commandLists);
     Check(queue->Signal(fence.Get(), 1), "Signal(fence)");
     if (fence->GetCompletedValue() < 1) {
@@ -693,14 +974,14 @@ void Run(const Options& options) {
     CloseHandle(fenceEvent);
     const double cpuSubmitWaitMs = std::chrono::duration<double, std::milli>(cpuEnd - cpuStart).count();
 
-    std::vector<uint8_t> outputPixels(static_cast<size_t>(kOutputWidth) * kOutputHeight * 4);
+    std::vector<uint8_t> outputPixels(static_cast<size_t>(outputWidth) * outputHeight * 4);
     void* outputMemory = nullptr;
     const D3D12_RANGE outputReadRange{0, static_cast<SIZE_T>(outputReadbackBytes)};
     Check(outputReadback->Map(0, &outputReadRange, &outputMemory), "Map(output readback)");
-    for (UINT row = 0; row < kOutputHeight; ++row) {
+    for (UINT row = 0; row < outputHeight; ++row) {
         const auto* source = static_cast<const uint8_t*>(outputMemory) + outputFootprint.Offset + static_cast<size_t>(row) * outputFootprint.Footprint.RowPitch;
-        auto* destination = outputPixels.data() + static_cast<size_t>(row) * kOutputWidth * 4;
-        std::copy_n(source, static_cast<size_t>(kOutputWidth) * 4, destination);
+        auto* destination = outputPixels.data() + static_cast<size_t>(row) * outputWidth * 4;
+        std::copy_n(source, static_cast<size_t>(outputWidth) * 4, destination);
     }
     const D3D12_RANGE noWrite{0, 0};
     outputReadback->Unmap(0, &noWrite);
@@ -725,14 +1006,18 @@ void Run(const Options& options) {
     if (metrics.minimum == metrics.maximum || metrics.distinctSampledColors < 2 || metrics.absoluteDifferenceFromBilinear == 0) {
         throw std::runtime_error("Output validation failed: FSR produced a blank/constant image or matched the bilinear reference exactly.");
     }
-    WriteBmp(options.outputDirectory / "fsr1-easu-rcas.bmp", kOutputWidth, kOutputHeight, outputPixels);
+    if (browserCapture) WritePng(outputPath, outputWidth, outputHeight, outputPixels);
+    else WriteBmp(outputPath, outputWidth, outputHeight, outputPixels);
     const uint64_t processedFrames = 1;
+    const double totalNativeMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - nativeStart).count();
     const std::string driverVersion = DriverInterfaceVersion(adapter);
-    SaveReport(options.outputDirectory / "fsr1-native-report.json", adapter, driverVersion, gpuTimersAvailable,
-               easuGpuMs, rcasGpuMs, cpuSubmitWaitMs, metrics, processedFrames);
-    std::cout << "PASS: official AMD FSR 1 EASU + RCAS D3D12 compute processed " << processedFrames << " deterministic frame.\n"
-              << "Adapter: " << Utf8(adapter.description.Description) << (adapter.software ? " (WARP SOFTWARE)" : " (hardware adapter)") << "\n"
-              << "Input: " << kInputWidth << 'x' << kInputHeight << " -> output: " << kOutputWidth << 'x' << kOutputHeight << "\n";
+    SaveReport(reportPath, adapter, driverVersion, browserCapture, inputPath, referencePath, outputPath,
+               inputWidth, inputHeight, outputWidth, outputHeight, gpuTimersAvailable,
+               easuGpuMs, rcasGpuMs, cpuSubmitWaitMs, totalNativeMs, metrics, processedFrames);
+    std::cout << "PASS: official AMD FSR 1 EASU + RCAS D3D12 compute processed " << processedFrames
+              << (browserCapture ? " browser-captured frame.\n" : " deterministic synthetic frame.\n")
+              << "Adapter: " << Utf8(adapter.description.Description) << (adapter.software ? " (WARP SOFTWARE)" : " (non-software adapter; physical identity unverified)") << "\n"
+              << "Input: " << inputWidth << 'x' << inputHeight << " -> output: " << outputWidth << 'x' << outputHeight << "\n";
     if (gpuTimersAvailable) {
         std::cout << "EASU GPU timestamp: " << std::fixed << std::setprecision(3) << easuGpuMs
                   << " ms; RCAS: " << rcasGpuMs << " ms; ";
@@ -741,17 +1026,31 @@ void Run(const Options& options) {
     }
     std::cout << "CPU submit/fence: " << std::fixed << std::setprecision(3) << cpuSubmitWaitMs << " ms\n"
               << "Mean absolute difference vs bilinear: " << metrics.meanAbsoluteDifferenceFromBilinear << "\n"
-              << "Images and report: " << options.outputDirectory.string() << "\n"
-              << (adapter.software ? "NOTE: WARP is software; physical-GPU acceptance remains NOT RUN.\n" : "NOTE: the non-software adapter ran FSR; AMD-vendor and browser-page gates are reported separately.\n");
+              << "Native end-to-end: " << totalNativeMs << " ms\n"
+              << "Images and report: " << PathUtf8(reportPath.parent_path()) << "\n"
+              << (adapter.software ? "NOTE: WARP is software; physical-GPU acceptance remains NOT RUN.\n" : "NOTE: physical adapter identity and AMD-vendor acceptance remain separate review gates.\n");
 }
+
 } // namespace
 
 int wmain(int argc, wchar_t** argv) {
+    bool comInitialized = false;
     try {
         const Options options = ParseOptions(argc, argv);
+        if (options.listAdapters) {
+            PrintAdapters();
+            return 0;
+        }
+        if (!options.inputPng.empty()) {
+            const HRESULT comResult = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+            Check(comResult, "CoInitializeEx(WIC)");
+            comInitialized = true;
+        }
         Run(options);
+        if (comInitialized) CoUninitialize();
         return 0;
     } catch (const std::exception& error) {
+        if (comInitialized) CoUninitialize();
         const std::string message = error.what();
         std::cerr << message << '\n';
         return message.rfind("NOT RUN:", 0) == 0 ? 2 : 1;

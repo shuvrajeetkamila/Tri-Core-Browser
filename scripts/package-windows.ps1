@@ -15,6 +15,9 @@ Copy-Item (Join-Path $root 'README.md'), (Join-Path $root 'LICENSE'), (Join-Path
 Copy-Item (Join-Path $root 'docs') (Join-Path $stage 'docs') -Recurse -Force
 New-Item -ItemType Directory -Force -Path (Join-Path $stage 'diagnostics') | Out-Null
 Copy-Item (Join-Path $root 'app/diagnostics/wasm-add.wat') (Join-Path $stage 'diagnostics/wasm-add.wat')
+$fsrEvidenceStage = Join-Path $stage 'diagnostics/fsr1-browser-frame-smoke'
+New-Item -ItemType Directory -Force -Path $fsrEvidenceStage | Out-Null
+Copy-Item (Join-Path $env:TRICORE_FSR_SMOKE_OUT '*') -Destination $fsrEvidenceStage -Recurse -Force
 $thirdParty = Join-Path $stage 'third-party'
 New-Item -ItemType Directory -Force -Path $thirdParty | Out-Null
 $packagedRuntime = Join-Path $release 'win-unpacked'
@@ -32,6 +35,27 @@ foreach ($license in $licenseFiles) {
 if ($env:TRICORE_SMOKE_TEST -ne 'PASS') {
   throw 'The tested-package workflow must mark TRICORE_SMOKE_TEST=PASS before assembling a distribution.'
 }
+if ($env:TRICORE_FSR_BROWSER_SMOKE -ne 'PASS' -or -not $env:TRICORE_FSR_SMOKE_OUT) {
+  throw 'The packaged browser-frame FSR1 smoke must pass before assembling a distribution.'
+}
+$fsrSmokeRoot = Join-Path $env:TRICORE_FSR_SMOKE_OUT 'browser-frame-smoke-summary.json'
+if (-not (Test-Path $fsrSmokeRoot -PathType Leaf)) { throw 'Browser-frame FSR1 smoke summary is missing.' }
+$fsrSummary = Get-Content $fsrSmokeRoot -Raw | ConvertFrom-Json
+if ($fsrSummary.status -ne 'PASS' -or $fsrSummary.source -ne 'Electron WebContents.capturePage() PNG'
+    -or $fsrSummary.softwareAdapter -ne $true -or $fsrSummary.frameCount -ne 3 -or $fsrSummary.distinctInputFrames -ne 3
+    -or $fsrSummary.distinctInputResolutions -ne 3
+    -or $fsrSummary.frames.Count -ne 3) {
+  throw 'Browser-frame FSR1 evidence does not prove three changing capturePage PNG frames processed on WARP.'
+}
+foreach ($frame in $fsrSummary.frames) {
+  if ($frame.nativeReport.status -ne 'PASS' -or $frame.nativeReport.inputSource -ne 'Electron WebContents.capturePage() PNG'
+      -or $frame.nativeReport.softwareAdapter -ne $true -or $frame.nativeReport.processingStatus -ne 'PASS') {
+    throw 'A per-frame native report does not validate the capturePage PNG to FSR1 WARP path.'
+  }
+  foreach ($imagePath in @($frame.inputPath, $frame.outputPath, $frame.referencePath, $frame.reportPath)) {
+    if (-not (Test-Path $imagePath -PathType Leaf)) { throw "Browser-frame FSR1 evidence is missing: $imagePath" }
+  }
+}
 $smokeStdout = Join-Path $env:RUNNER_TEMP 'tricore-smoke.stdout.txt'
 if (Test-Path $smokeStdout -PathType Leaf) {
   Copy-Item $smokeStdout (Join-Path $stage 'WINDOWS_SMOKE_TEST.txt')
@@ -47,9 +71,10 @@ $packageTests = @"
 
 Source commit: $commit
 Windows x64 portable packaging: PASS.
-Packaged application launch; local HTTP, JavaScript, WebAssembly, presence of all five graphics-mode controls, and tab lifecycle smoke tests: PASS (the required packaged process exited with code 0).
+Packaged application launch; local HTTP, JavaScript, WebAssembly, presence of all five graphics-mode controls, tab lifecycle, and browser-frame FSR regression smoke tests: PASS (the required packaged process exited with code 0).
+Browser-frame FSR evidence: three changing frames at three capture resolutions from the bundled sandboxed WebGL2 `WebContentsView` were captured through Electron `capturePage()` PNG, processed by AMD FSR 1.0.2 EASU + RCAS in a separate D3D12 helper on WARP, and returned as PNG previews. This is screenshot readback, not zero-copy, real-time, arbitrary-page, or physical-GPU evidence.
 External HTTPS connectivity: see the package-root `WINDOWS_SMOKE_TEST.txt`; network unavailability is recorded as blocked without bypassing certificate validation.
-See the commit-specific root `BUILD_REPORT.txt` and `WINDOWS_SMOKE_TEST.txt` for this distribution's evidence. DLSS and FSR remain not implemented and are not covered by the smoke test.
+See `diagnostics/fsr1-browser-frame-smoke/`, the commit-specific root `BUILD_REPORT.txt`, and `WINDOWS_SMOKE_TEST.txt` for captures/reports. DLSS remains not implemented; ordinary browser pages retain standard Chromium rendering.
 "@
 Add-Content -Path (Join-Path $stage 'docs/TEST_RESULTS.md') -Value $packageTests -Encoding utf8
 $workflowUrl = if ($env:GITHUB_RUN_ID) { "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID" } else { 'Local build; no GitHub Actions run.' }
@@ -66,10 +91,12 @@ Electron package: $(node -p 'require("./node_modules/electron/package.json").ver
 Chromium/V8: recorded by the packaged runtime in WINDOWS_SMOKE_TEST.txt
 Target: Windows x64, portable Electron/Chromium application
 Configuration: Release portable package
-Packaged runtime test: PASS for local HTTP page, JavaScript, WASM add(19,23)=42, presence of all five graphics-mode controls, and tab create/select/close. The external HTTPS probe result is in WINDOWS_SMOKE_TEST.txt.
+Packaged runtime test: PASS for local HTTP page, JavaScript, WASM add(19,23)=42, presence of all five graphics-mode controls, tab create/select/close, and the required browser-frame FSR1 regression smoke. The external HTTPS probe result is in WINDOWS_SMOKE_TEST.txt.
 WASM: PASS for the controlled V8 diagnostic; this is not a webpage upscaling feature.
-DLSS: BLOCKED / NOT IMPLEMENTED; no Streamline SDK integration or native webpage render bridge is shipped.
-FSR: BLOCKED / NOT IMPLEMENTED; no FidelityFX native render path is shipped.
+FSR: PASS only for three changing frames at three capture resolutions from the bundled WebGL2 WebContentsView captured by Electron capturePage() as PNG and processed by AMD FSR 1.0.2 EASU + RCAS in a separate D3D12 helper on WARP. The captures/reports are in diagnostics/fsr1-browser-frame-smoke/.
+FSR limits: CPU screenshot readback + D3D12 upload/readback + preview; not zero-copy, in-compositor, real-time, arbitrary-page, physical-GPU, or performance-improvement evidence. Physical-GPU validation remains NOT RUN.
+DLSS: NOT IMPLEMENTED; no Streamline integration, authorized runtime, or native page-frame bridge is shipped.
+Ordinary web pages: standard Chromium rendering only; no page upscaling is enabled.
 Executable in this package: TriCoreBrowser.exe at the portable ZIP root ($exeBytes bytes)
 Workflow runner path: release/TriCoreBrowser.exe
 Portable distribution: TriCoreBrowser-Windows-x64-portable.zip

@@ -59,8 +59,8 @@ function lifecycle(evidence = {}) {
   const outputWidth = Number.isSafeInteger(evidence.outputWidth) && evidence.outputWidth > 0 ? evidence.outputWidth : null;
   const outputHeight = Number.isSafeInteger(evidence.outputHeight) && evidence.outputHeight > 0 ? evidence.outputHeight : null;
   const integrationCanRun = compatible && initialized && !failed && !unsupported;
-  const active = integrationCanRun && (evidence.active === true || processedFrames > 0);
-  const processingFrames = active && (evidence.processingFrames === true || processedFrames > 0);
+  const active = integrationCanRun && evidence.active === true;
+  const processingFrames = active && evidence.processingFrames === true;
 
   let state = 'NOT DETECTED';
   if (failed) state = 'FAILED';
@@ -94,7 +94,7 @@ function lifecycle(evidence = {}) {
 function createUnavailableUpscaler(id, gpuDetected, integration = {}) {
   const implemented = integration?.implemented === true;
   const feature = lifecycle({
-    detected: gpuDetected,
+    detected: integration?.detected === true || gpuDetected,
     compatible: integration?.compatible === true,
     initialized: integration?.initialized === true,
     active: integration?.active === true,
@@ -119,6 +119,8 @@ function createUnavailableUpscaler(id, gpuDetected, integration = {}) {
     ...feature,
     hardwareDetected: gpuDetected,
     hardwareCompatibility,
+    automaticEligible: integration?.automaticEligible !== false,
+    scope: String(integration?.scope || ''),
     reason,
     backend: integration?.backend || 'No native frame-processing backend',
   });
@@ -165,7 +167,7 @@ export function detectGraphicsCapabilities({
       webgpu: Object.freeze({ ...webgpu }),
       webgl2: Object.freeze({ ...webgl2 }),
       chromium: Object.freeze({ ...featureStatus }),
-      nativeD3D12: 'NOT PROBED: no native D3D12 upscaler integration is compiled into this build.',
+      nativeD3D12: String(integration?.fsr?.adapterApiStatus || 'NOT PROBED: no native D3D12 adapter report was returned.'),
       nativeVulkan: 'NOT PROBED: no native Vulkan upscaler integration is compiled into this build.',
     }),
     technologies: Object.freeze({
@@ -185,7 +187,7 @@ export function detectGraphicsCapabilities({
 }
 
 function isUsable(feature) {
-  return Boolean(feature && feature.compatible && feature.initialized && !feature.failed && !feature.unsupported);
+  return Boolean(feature && feature.compatible && feature.initialized && !feature.failed && !feature.unsupported && feature.automaticEligible !== false);
 }
 
 /** Return the first initialized, compatible implementation in the preference. */
@@ -267,7 +269,7 @@ export function resolveGraphicsMode(mode, { capabilities = null, wasmResult = nu
       return Object.freeze({
         requestedMode,
         selectedMode: requestedMode,
-        effectiveMode: 'wasm',
+        effectiveMode: 'standard',
         status: 'failed',
         state: 'FAILED',
         stateClass: 'failed',
@@ -283,7 +285,7 @@ export function resolveGraphicsMode(mode, { capabilities = null, wasmResult = nu
       return Object.freeze({
         requestedMode,
         selectedMode: requestedMode,
-        effectiveMode: wasm.compatible && wasm.initialized ? 'wasm' : 'standard',
+        effectiveMode: 'standard',
         status: stateClass(state),
         state,
         stateClass: stateClass(state),

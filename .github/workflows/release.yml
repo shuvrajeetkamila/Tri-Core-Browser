@@ -55,6 +55,11 @@ jobs:
           if ($exeItem.Length -lt 30000000) { throw "Executable is unexpectedly small ($($exeItem.Length) bytes); refusing to upload a placeholder." }
           $stdout = Join-Path $env:RUNNER_TEMP 'tricore-smoke.stdout.txt'
           $stderr = Join-Path $env:RUNNER_TEMP 'tricore-smoke.stderr.txt'
+          $fsrSmokeOut = Join-Path $env:RUNNER_TEMP 'tricore-fsr-browser-frame-smoke'
+          if (Test-Path $fsrSmokeOut) { Remove-Item $fsrSmokeOut -Recurse -Force }
+          New-Item -ItemType Directory -Path $fsrSmokeOut -Force | Out-Null
+          $env:TRICORE_REQUIRE_FSR_BROWSER_SMOKE = 'PASS'
+          $env:TRICORE_FSR_SMOKE_OUT = $fsrSmokeOut
           $process = Start-Process -FilePath $exe -ArgumentList @('--smoke-test') -NoNewWindow -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
           if (-not $process.WaitForExit(150000)) {
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
@@ -64,8 +69,29 @@ jobs:
           if (Test-Path $stdout) { Get-Content $stdout }
           if (Test-Path $stderr) { Get-Content $stderr }
           if ($process.ExitCode -ne 0) { throw "Packaged browser smoke test exited with $($process.ExitCode)." }
+          $smokeText = if (Test-Path $stdout) { Get-Content $stdout -Raw } else { '' }
+          if (-not $smokeText.Contains('[smoke] Real WebContentsView WebGL2 capture')) { throw 'Packaged smoke log does not contain browser-frame capture-to-FSR evidence.' }
+          $summaryPath = Join-Path $fsrSmokeOut 'browser-frame-smoke-summary.json'
+          if (-not (Test-Path $summaryPath -PathType Leaf)) { throw 'Browser-frame FSR smoke report was not produced.' }
+          $summary = Get-Content $summaryPath -Raw | ConvertFrom-Json
+          if ($summary.status -ne 'PASS' -or $summary.source -ne 'Electron WebContents.capturePage() PNG') { throw 'Browser-frame smoke report does not validate Electron capturePage PNG input.' }
+          if ($summary.softwareAdapter -ne $true -or $summary.frameCount -ne 3 -or $summary.distinctInputFrames -ne 3 -or $summary.distinctInputResolutions -ne 3) { throw 'Browser-frame smoke must report three unique changing frames at three resolutions processed on WARP software, never as physical-GPU evidence.' }
+          if ($summary.frames.Count -ne 3) { throw 'Browser-frame smoke report must contain three per-frame native reports.' }
+          foreach ($frame in $summary.frames) {
+            if ($frame.nativeReport.status -ne 'PASS' -or $frame.nativeReport.inputSource -ne 'Electron WebContents.capturePage() PNG' -or $frame.nativeReport.softwareAdapter -ne $true) { throw 'A per-frame report did not validate the screenshot-to-FSR WARP path.' }
+            if (-not (Test-Path $frame.inputPath -PathType Leaf) -or -not (Test-Path $frame.outputPath -PathType Leaf) -or -not (Test-Path $frame.reportPath -PathType Leaf)) { throw 'A browser capture, processed PNG, or per-frame report is missing.' }
+            foreach ($imagePath in @($frame.inputPath, $frame.outputPath)) {
+              $imageBytes = [System.IO.File]::ReadAllBytes($imagePath)
+              if ($imageBytes.Length -lt 80 -or $imageBytes[0] -ne 137 -or $imageBytes[1] -ne 80 -or $imageBytes[2] -ne 78 -or $imageBytes[3] -ne 71) { throw "Expected a non-empty PNG capture: $imagePath" }
+            }
+          }
+          $releaseEvidence = Join-Path $PWD 'release/fsr1-browser-frame-smoke'
+          if (Test-Path $releaseEvidence) { Remove-Item $releaseEvidence -Recurse -Force }
+          Copy-Item $fsrSmokeOut $releaseEvidence -Recurse -Force
           Add-Content -Path $env:GITHUB_ENV -Value 'TRICORE_SMOKE_TEST=PASS' -Encoding utf8
-          Write-Host "PASS: $($exeItem.Length) byte Windows x64 portable executable; packaged smoke test exited 0."
+          Add-Content -Path $env:GITHUB_ENV -Value 'TRICORE_FSR_BROWSER_SMOKE=PASS' -Encoding utf8
+          Add-Content -Path $env:GITHUB_ENV -Value "TRICORE_FSR_SMOKE_OUT=$fsrSmokeOut" -Encoding utf8
+          Write-Host "PASS: $($exeItem.Length) byte Windows x64 portable executable; 3 distinct changing WebContentsView capturePage PNG frames at 3 resolutions processed by the FSR1 D3D12 helper on WARP; physical-GPU validation remains NOT RUN."
       - name: Assemble portable distribution and reports
         shell: pwsh
         run: '& .\scripts\package-windows.ps1'
@@ -79,6 +105,7 @@ jobs:
             release/BUILD_REPORT.txt
             release/SIZE_AUDIT.txt
             release/SHA256SUMS.txt
+            release/fsr1-browser-frame-smoke/**
             dependency-audit.json
             dependency-tree.json
           if-no-files-found: error
@@ -137,9 +164,9 @@ jobs:
 
           This prerelease contains the tested portable Windows x64 Electron/Chromium browser and its supporting documentation. It loads real websites and includes an executed WebAssembly diagnostic.
 
-          **DLSS and AMD FSR are not integrated.** Their controls report this accurately and retain standard Chromium rendering. No universal webpage upscaling or performance improvement is claimed.
+          **FSR1 scope:** the package includes a manual diagnostic for the bundled animated WebGL2 scene only. It captures actual `WebContentsView` frames through Electron `capturePage()` PNG, processes them in a separate D3D12 helper on software WARP, and returns a PNG preview. This is CPU readback/upload, not zero-copy, real-time, arbitrary-page, or physical-GPU evidence; physical-GPU validation remains NOT RUN.
 
-          The package is unsigned. Review `BUILD_REPORT.txt`, `SIZE_AUDIT.txt`, and `SHA256SUMS.txt` attached to this release.
+          **DLSS is not implemented.** Ordinary web pages continue to render in standard Chromium; no general upscaling or performance improvement is claimed. The package is unsigned. Review `BUILD_REPORT.txt`, `SIZE_AUDIT.txt`, `SHA256SUMS.txt`, and the included smoke captures/reports.
           EOF
           gh --version
           gh release create "$RELEASE_TAG" \

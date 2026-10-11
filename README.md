@@ -2,7 +2,7 @@
 
 A standalone Windows desktop browser built on Electron's bundled Chromium runtime. Three independent browser cores let you compare pages side by side; each core supports its own tabs, navigation history, bookmarks, downloads, and profile storage.
 
-> **Honest graphics status:** Chromium WebAssembly is exercised by a real, repeatable diagnostic. The app reports GPU and WebGPU capabilities. **NVIDIA DLSS and AMD FSR are not integrated** in this release: their controls explicitly report that they are unavailable and retain standard Chromium rendering. No DLSS/FSR activity or frame-rate improvement is simulated or claimed.
+> **Honest graphics status:** Chromium WebAssembly is exercised by a real, repeatable diagnostic. The source now includes an opt-in AMD FSR 1.0.2 test path for a bundled animated WebGL2 scene: Electron captures the real `WebContentsView` as a PNG, a separate D3D12 helper processes it, and the result returns as a comparison preview. This is screenshot/readback processing—not zero-copy, real-time, or general-page upscaling. Windows build/WARP validation for this revision is pending; physical-GPU validation is not run. DLSS remains unavailable, ordinary pages keep standard Chromium rendering, and no performance gain is claimed.
 
 ## What works today
 
@@ -34,8 +34,8 @@ Open **Modes** in the top toolbar.
 | --- | --- | --- |
 | **WASM MODE** | Compiles and runs the project's small WebAssembly test inside Chromium/V8. | Implemented; test result and timing are shown. It does not upscale pages or promise higher frame rates. |
 | **NVIDIA DLSS MODE** | Requests a native DLSS rendering path. | **Not integrated.** The controller reports why and falls back to standard Chromium. An NVIDIA GPU/driver alone is not enough. |
-| **AMD FSR MODE** | Requests a native FidelityFX/FSR rendering path. | **Not integrated.** The controller reports why and falls back to standard Chromium. |
-| **HYBRID MODE** | Runs the controlled WASM diagnostic and checks whether an upscaler can be used. | The WASM part works; no upscaler is currently available, so the browser safely stays on standard Chromium rendering. |
+| **AMD FSR MODE** | Selects the status for the limited FSR1 diagnostic; it does not replace normal page rendering. In the advanced panel, a user may opt in to capture the bundled WebGL2 test scene as a PNG, process it through the native AMD FSR1 EASU + RCAS D3D12 helper, and view a returned preview. | Source implemented; current Windows packaged/WARP validation pending. It is not an arbitrary-page, in-compositor, zero-copy, or real-time upscaler. Standard Chromium remains active for regular pages. |
+| **HYBRID MODE** | Applies the automatic native-backend priority only when a compatible, initialized renderer integration is proven. | DLSS is unavailable and the FSR capture helper is manual-only, so normal pages safely stay on standard Chromium; WASM remains a separate runtime diagnostic. |
 | **STANDARD MODE** | Uses the normal Chromium renderer; Chromium/the driver chooses hardware or software compositing. | Implemented and active by default. |
 
 The advanced panel distinguishes Chromium's GPU/WebGPU capability information from actual DLSS/FSR integration. Read [Graphics integration status](docs/GRAPHICS_INTEGRATION.md) before interpreting the controls.
@@ -65,7 +65,7 @@ The GitHub Actions workflow builds on a Windows runner, tests the packaged appli
 
 ## Feature maturity and limitations
 
-This is an early, compact browser product built on Electron's bundled Chromium, not a custom Chromium fork. It loads real websites but is not a feature-complete replacement for a major browser. **DLSS and FSR are not implemented**, and Chromium `WebContentsView` does not provide this application with the per-frame color/depth/motion-vector inputs or native swap-chain required to run those upscalers on arbitrary websites. No compatible native graphics demonstration is bundled yet. See [Known limitations](docs/KNOWN_LIMITATIONS.md).
+This is an early, compact browser product built on Electron's bundled Chromium, not a custom Chromium fork. It loads real websites but is not a feature-complete replacement for a major browser. Chromium `WebContentsView` does not provide arbitrary websites' per-frame color/depth/motion-vector resources or a supported native swap-chain bridge. The FSR diagnostic is deliberately limited to the bundled scene and screenshot/readback preview; it does not upscale ordinary webpages, external apps, WebGPU games, video, DRM, or cloud streams. No NVIDIA Streamline/DLSS integration or physical-GPU validation is included. See [Known limitations](docs/KNOWN_LIMITATIONS.md).
 
 ## Project documents
 
@@ -73,6 +73,9 @@ This is an early, compact browser product built on Electron's bundled Chromium, 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Windows build](docs/BUILD_WINDOWS.md)
 - [Graphics integration status](docs/GRAPHICS_INTEGRATION.md)
+- [Browser-frame FSR technical decision record](docs/BROWSER_FRAME_UPSCALING_DECISION_RECORD.md)
+- [Native FSR1 harness and reproducing the PNG path](native/fsr1-poc/README.md)
+- [Implementation plan and acceptance gates](docs/GAMING_UPSCALING_IMPLEMENTATION_PLAN.md)
 - [Test results](docs/TEST_RESULTS.md)
 - [Known limitations](docs/KNOWN_LIMITATIONS.md)
 - [Licensing and redistribution audit](docs/LICENSE_COMPLIANCE.md)

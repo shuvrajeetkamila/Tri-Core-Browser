@@ -24,12 +24,17 @@ let graphicsSelection = graphicsPreferences.selection;
 let graphicsPriority = graphicsPreferences.priority;
 let selectedMode = graphicsPreferences.mode;
 let performancePanelCollapsed = graphicsPreferences.panelCollapsed;
+let fsrAdapterIndexPreference = graphicsPreferences.fsrAdapterIndex;
 let wasmCapability = { detected: typeof WebAssembly === 'object', compatible: false, initialized: false, failed: false };
 let wasmResult = null;
 let wasmRunning = false;
 let graphicsRefreshPending = false;
+let graphicsRefreshQueued = false;
 let graphicsInfo = null;
 let graphicsCapabilities = detectGraphicsCapabilities({ wasm: wasmCapability });
+let fsrCaptureRunning = false;
+let fsrCaptureJobId = '';
+let fsrLastResult = null;
 let utilityKind = 'bookmarks';
 
 if (browser) document.body.classList.add('desktop-mode');
@@ -40,6 +45,7 @@ function saveGraphicsPreferences() {
     priority: graphicsPriority,
     mode: selectedMode,
     panelCollapsed: performancePanelCollapsed,
+    fsrAdapterIndex: fsrAdapterIndexPreference,
   });
 }
 
@@ -62,6 +68,7 @@ function setActivePane(slot, focusAddress = false) {
   if (!Number.isInteger(slot) || slot < 0 || slot >= CORE_COUNT) return;
   activePane = slot;
   paneElements.forEach((pane, index) => pane.classList.toggle('is-active', index === slot));
+  updateFsrLabControls();
   if (focusAddress) {
     if (focusedPane !== null && focusedPane !== slot) {
       focusedPane = null;
@@ -162,6 +169,7 @@ function updateState(state) {
   pane.querySelector('[data-action="stop"]').hidden = !current.loading;
   if (current.url && document.activeElement !== input) input.value = current.url;
   renderTabs(slot, current.tabs || []);
+  updateFsrLabControls();
 }
 
 function scheduleLayout() {
@@ -480,12 +488,159 @@ function lifecycleStateClass(state) {
 
 function featureRuntimeLabel(feature) {
   if (feature.failed) {
-    const count = feature.initialized ? ` · ${feature.processedFrames} confirmed frame(s)` : '';
+    const count = feature.processedFrames > 0 ? ` · ${feature.processedFrames} confirmed captured frame(s)` : '';
     return `FAILED · ${feature.error || 'runtime error'}${count}`;
+  }
+  if (feature.automaticEligible === false) {
+    return `${feature.state} · ${feature.processedFrames || 0} captured test frame(s) · not attached to ordinary pages`;
   }
   if (feature.unsupported) return 'Not integrated · initialization not attempted · no frame counter';
   if (!feature.initialized) return `${feature.state} · not initialized`;
   return `${feature.state} · ${feature.processedFrames} confirmed frame(s)`;
+}
+
+function renderFsrAdapterOptions() {
+  const select = document.querySelector('#fsr-adapter-select');
+  if (!select) return;
+  const adapterInfo = graphicsInfo?.nativeFsrAdapters;
+  const adapters = Array.isArray(adapterInfo?.adapters)
+    ? adapterInfo.adapters.filter((adapter) => !adapter.softwareAdapter && adapter.fsr1Compatible)
+    : [];
+  const previousSelection = String(fsrAdapterIndexPreference ?? select.value ?? '');
+  select.replaceChildren();
+  if (!adapters.length) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = adapterInfo?.available
+      ? 'No FSR-compatible non-software D3D12 adapter detected'
+      : 'Native FSR1 helper unavailable';
+    select.append(option);
+    fsrAdapterIndexPreference = null;
+  } else {
+    for (const adapter of adapters) {
+      const option = document.createElement('option');
+      option.value = String(adapter.index);
+      option.textContent = `${adapter.name} · ${adapter.vendorId || 'vendor unknown'} · ${adapter.featureLevel || 'D3D12'} / SM ${adapter.shaderModel || 'unknown'}`;
+      select.append(option);
+    }
+    const selected = adapters.find((adapter) => String(adapter.index) === previousSelection) || adapters[0];
+    select.value = String(selected.index);
+    fsrAdapterIndexPreference = selected.index;
+  }
+  updateFsrLabControls();
+}
+
+function updateFsrLabControls() {
+  const openButton = document.querySelector('#fsr-open-test-scene');
+  const runButton = document.querySelector('#fsr-capture-run');
+  const cancelButton = document.querySelector('#fsr-capture-cancel');
+  const adapterSelect = document.querySelector('#fsr-adapter-select');
+  if (!openButton || !runButton || !cancelButton || !adapterSelect) return;
+  const tab = activeTab(activePane);
+  const sceneReady = Boolean(tab?.fsrTestScene && !tab.loading);
+  const adapters = Array.isArray(graphicsInfo?.nativeFsrAdapters?.adapters)
+    ? graphicsInfo.nativeFsrAdapters.adapters.filter((adapter) => !adapter.softwareAdapter && adapter.fsr1Compatible)
+    : [];
+  const adapterSelected = adapters.some((adapter) => String(adapter.index) === adapterSelect.value);
+  openButton.disabled = !browser || fsrCaptureRunning;
+  adapterSelect.disabled = fsrCaptureRunning || adapters.length === 0;
+  runButton.disabled = !browser || fsrCaptureRunning || !sceneReady || !adapterSelected;
+  cancelButton.hidden = !fsrCaptureRunning || !fsrCaptureJobId;
+}
+
+function setFsrTestStatus(message, kind = 'info') {
+  const status = document.querySelector('#fsr-test-status');
+  status.textContent = String(message || '');
+  status.dataset.kind = kind;
+}
+
+function setFsrLifecycleState(state) {
+  const chip = document.querySelector('#fsr-test-state');
+  chip.textContent = state;
+  chip.dataset.state = lifecycleStateClass(state);
+}
+
+function renderFsrTestResult(result) {
+  const root = document.querySelector('#fsr-test-result');
+  const frame = result?.frames?.[result.frames.length - 1];
+  if (!root || !result?.ok || !frame) return;
+  root.hidden = false;
+  document.querySelector('#fsr-input-preview').src = result.inputPreview;
+  document.querySelector('#fsr-output-preview').src = result.outputPreview;
+  document.querySelector('#fsr-test-metrics-title').textContent = `PASS · ${result.frameCount} browser-captured frame(s) processed · ${result.distinctInputFrames} distinct animated input(s)`;
+  const adapterType = frame.softwareAdapter ? 'WARP software adapter — not physical-GPU evidence' : `non-software D3D12 adapter (${frame.adapterVendorId}; physical identity still requires review)`;
+  const gpuTimes = frame.nativeGpuTimestampsAvailable
+    ? `EASU ${Number(frame.easuGpuTimeMs).toFixed(3)} ms + RCAS ${Number(frame.rcasGpuTimeMs).toFixed(3)} ms GPU`
+    : 'native GPU timestamps unavailable';
+  document.querySelector('#fsr-test-metrics-detail').textContent = `${frame.inputWidth}×${frame.inputHeight} → ${frame.outputWidth}×${frame.outputHeight} · ${adapterType} · capturePage ${frame.capturePageMs.toFixed(2)} ms · native helper ${frame.nativeProcessMs.toFixed(2)} ms · ${gpuTimes} · batch wall ${result.totalRoundTripMs.toFixed(2)} ms. Upscaling changes image dimensions; no performance gain is established.`;
+  document.querySelector('#fsr-test-capture-paths').textContent = `Input PNG: ${frame.inputPath} · Processed PNG: ${frame.outputPath} · Bilinear reference PNG: ${frame.referencePath} · Native report: ${frame.reportPath} · Input SHA-256: ${frame.inputSha256}`;
+  setFsrTestStatus('FSR1 passed for the controlled WebGL2 capture. The original browser tab was not replaced or modified; regular pages still render in Chromium.', 'pass');
+}
+
+async function openFsrTestScene() {
+  if (!browser) {
+    showToast('The WebGL2 diagnostic scene opens in the Windows desktop app.');
+    return;
+  }
+  const slot = activePane;
+  const button = document.querySelector('#fsr-open-test-scene');
+  button.disabled = true;
+  setFsrTestStatus(`Opening the bundled animated WebGL2 scene in Core ${slot + 1}…`, 'working');
+  try {
+    const result = await browser.openFsrTestScene(slot);
+    if (!result?.ok) throw new Error(result?.error || 'The test scene tab could not be opened.');
+    const currentStates = await browser.getStates();
+    currentStates.forEach(updateState);
+    setFsrTestStatus('Test scene opened. Wait for “WebGL2 · animated” in the browser pane, then run the opt-in capture.', 'info');
+  } catch (error) {
+    setFsrTestStatus(error?.message || 'The test scene could not be opened.', 'error');
+    showToast(error?.message || 'The test scene could not be opened.');
+  } finally {
+    button.disabled = false;
+    updateFsrLabControls();
+  }
+}
+
+async function runFsrCaptureTest() {
+  if (!browser || fsrCaptureRunning) return;
+  const tab = activeTab(activePane);
+  if (!tab?.fsrTestScene || tab.loading) {
+    setFsrTestStatus('Open and activate the bundled WebGL2 test-scene tab in the selected core first.', 'error');
+    return;
+  }
+  const adapterIndex = Number(document.querySelector('#fsr-adapter-select').value);
+  if (!Number.isInteger(adapterIndex) || adapterIndex < 0) {
+    setFsrTestStatus('No compatible non-software D3D12 adapter is available. WARP is software-only and is never substituted for hardware.', 'error');
+    return;
+  }
+  fsrCaptureRunning = true;
+  fsrCaptureJobId = '';
+  fsrLastResult = null;
+  document.querySelector('#fsr-capture-run').textContent = 'Starting…';
+  setFsrTestStatus('Starting an explicit three-frame WebContentsView capture; ordinary rendering remains enabled.', 'working');
+  updateFsrLabControls();
+  try {
+    const result = await browser.processFsrTestScene({ slot: activePane, tabId: tab.id, frameCount: 3, adapterIndex });
+    if (!result?.ok) throw new Error(result?.error || 'FSR frame processing failed.');
+    fsrLastResult = result;
+    renderFsrTestResult(result);
+    await refreshGraphicsDiagnostics({ force: true });
+    renderGraphicsMode(selectedMode);
+  } catch (error) {
+    setFsrTestStatus(error?.message || 'The opt-in FSR test failed; standard Chromium rendering remains active.', 'error');
+    showToast(error?.message || 'The FSR frame-capture test failed.');
+  } finally {
+    fsrCaptureRunning = false;
+    fsrCaptureJobId = '';
+    document.querySelector('#fsr-capture-run').textContent = 'Capture + process 3 frames';
+    updateFsrLabControls();
+  }
+}
+
+async function cancelFsrCaptureTest() {
+  if (!browser || !fsrCaptureJobId) return;
+  const cancelled = await browser.cancelFsrTestScene(fsrCaptureJobId);
+  if (cancelled) setFsrTestStatus('Cancellation requested. Any already completed captures remain in the diagnostic folder.', 'working');
 }
 
 function updateTechnologyCard(id, feature, hardwareLabel = '') {
@@ -517,7 +672,7 @@ function renderPerformancePanel(state) {
   const gpuName = document.querySelector('#performance-gpu-name');
   const gpuDriver = document.querySelector('#performance-gpu-driver');
   if (primary) {
-    gpuName.textContent = `${primary.vendor || 'Unknown vendor'} ${primary.name || 'Unknown device'}${primary.active ? ' · Chromium active device' : ''}`;
+    gpuName.textContent = `${primary.vendor || 'Unknown vendor'} ${primary.name || 'Unknown device'}${primary.active ? ' · Chromium-reported active device' : ''}`;
     gpuDriver.textContent = primary.driverVersion ? `Driver reported by Electron: ${primary.driverVersion}` : 'Driver version not reported by Electron';
   } else {
     gpuName.textContent = report?.gpu?.infoError ? 'GPU details unavailable' : 'No GPU device reported by Electron';
@@ -525,37 +680,53 @@ function renderPerformancePanel(state) {
   }
 
   const nvidiaLabel = report?.gpu?.nvidiaDetected
-    ? 'NVIDIA GPU detected; DLSS feature compatibility not tested'
-    : report?.gpu?.infoError ? 'GPU identification unavailable' : 'No NVIDIA GPU reported';
-  const amdLabel = report?.gpu?.amdDetected
-    ? 'AMD GPU detected; FSR feature compatibility not tested'
-    : report?.gpu?.infoError ? 'GPU identification unavailable' : 'No AMD GPU reported';
+    ? 'NVIDIA GPU reported by Electron; DLSS runtime/compatibility not verified'
+    : report?.gpu?.infoError ? 'GPU identification unavailable' : 'No NVIDIA GPU reported by Electron';
+  const compatibleAdapters = graphicsInfo?.nativeFsrAdapters?.adapters?.filter((adapter) => !adapter.softwareAdapter && adapter.fsr1Compatible) || [];
+  const fsrHardwareLabel = compatibleAdapters.length
+    ? `${compatibleAdapters.length} FSR1-capable non-software D3D12 adapter(s); separate helper, not proven to match Chromium GPU`
+    : graphicsInfo?.nativeFsrAdapters?.warpAvailable
+      ? 'No compatible non-software D3D12 adapter; WARP is software-only'
+      : 'No compatible hardware D3D12 adapter reported';
   updateTechnologyCard('dlss', report?.technologies?.dlss, nvidiaLabel);
-  updateTechnologyCard('fsr', report?.technologies?.fsr, amdLabel);
+  updateTechnologyCard('fsr', report?.technologies?.fsr, fsrHardwareLabel);
   updateTechnologyCard('wasm', report?.technologies?.wasm);
 
   const apis = report?.apis || {};
-  document.querySelector('#performance-api-summary').textContent = `WebGPU: ${apis.webgpu?.status || 'not queried'} · WebGL2: ${apis.webgl2?.status || 'not queried'}`;
-  document.querySelector('#performance-native-api-summary').textContent = 'D3D12/Vulkan are not directly probed; no native upscaler runtime is integrated.';
+  const apiDetails = graphicsInfo?.graphicsApiDetails || {};
+  const glDescription = apiDetails.glRenderer || apiDetails.glImplementationParts || 'Chromium renderer details not reported';
+  document.querySelector('#performance-api-summary').textContent = `WebGPU: ${apis.webgpu?.status || 'not queried'} · WebGL2: ${apis.webgl2?.status || 'not queried'} · Chromium GL renderer: ${glDescription}`;
+  document.querySelector('#performance-native-api-summary').textContent = apis.nativeD3D12 || 'D3D12 helper adapter query not run; Vulkan integration is not present.';
+  renderFsrAdapterOptions();
 
-  const upscaler = ['dlss', 'fsr'].map((id) => ({ id, ...report?.technologies?.[id] })).find((feature) => feature.processingFrames);
-  const initializedUpscaler = upscaler || ['dlss', 'fsr'].map((id) => ({ id, ...report?.technologies?.[id] })).find((feature) => feature.initialized && !feature.failed);
+  const activeUpscaler = ['dlss', 'fsr'].map((id) => ({ id, ...report?.technologies?.[id] })).find((feature) => feature.processingFrames);
+  const initializedUpscaler = activeUpscaler || ['dlss', 'fsr'].map((id) => ({ id, ...report?.technologies?.[id] })).find((feature) => feature.initialized && !feature.failed);
   const frameSummary = document.querySelector('#performance-frame-summary');
   const gpuTimeSummary = document.querySelector('#performance-gpu-time-summary');
-  if (upscaler) {
-    const dimensions = upscaler.inputWidth && upscaler.inputHeight && upscaler.outputWidth && upscaler.outputHeight
-      ? ` · ${upscaler.inputWidth}×${upscaler.inputHeight} → ${upscaler.outputWidth}×${upscaler.outputHeight}`
+  const previousFsrReport = graphicsInfo?.lastFsrReport;
+  if (activeUpscaler) {
+    const dimensions = activeUpscaler.inputWidth && activeUpscaler.inputHeight && activeUpscaler.outputWidth && activeUpscaler.outputHeight
+      ? ` · ${activeUpscaler.inputWidth}×${activeUpscaler.inputHeight} → ${activeUpscaler.outputWidth}×${activeUpscaler.outputHeight}`
       : '';
-    frameSummary.textContent = `${upscaler.id.toUpperCase()} · ${upscaler.processedFrames} confirmed frame(s)${dimensions}`;
-    gpuTimeSummary.textContent = upscaler.gpuTimeMs === null
+    frameSummary.textContent = `${activeUpscaler.id.toUpperCase()} · ${activeUpscaler.processedFrames} confirmed frame(s)${dimensions}`;
+    gpuTimeSummary.textContent = activeUpscaler.gpuTimeMs === null
       ? 'GPU time not reported by the native backend'
-      : `GPU ${upscaler.gpuTimeMs.toFixed(3)} ms${upscaler.cpuTimeMs === null ? '' : ` · CPU ${upscaler.cpuTimeMs.toFixed(3)} ms`}`;
+      : `GPU ${activeUpscaler.gpuTimeMs.toFixed(3)} ms${activeUpscaler.cpuTimeMs === null ? '' : ` · CPU ${activeUpscaler.cpuTimeMs.toFixed(3)} ms`}`;
+  } else if (fsrLastResult?.ok || previousFsrReport) {
+    const completedFrames = fsrLastResult?.ok ? fsrLastResult.frameCount : report?.technologies?.fsr?.processedFrames || 1;
+    const latest = fsrLastResult?.ok ? fsrLastResult.frames.at(-1) : null;
+    const input = latest ? `${latest.inputWidth}×${latest.inputHeight}` : `${previousFsrReport?.input?.width || '?'}×${previousFsrReport?.input?.height || '?'}`;
+    const output = latest ? `${latest.outputWidth}×${latest.outputHeight}` : `${previousFsrReport?.output?.width || '?'}×${previousFsrReport?.output?.height || '?'}`;
+    frameSummary.textContent = `FSR1 controlled-scene preview · ${completedFrames} captured frame(s) · ${input} → ${output} · not active on ordinary pages`;
+    gpuTimeSummary.textContent = latest?.nativeGpuTimestampsAvailable
+      ? `Latest EASU ${Number(latest.easuGpuTimeMs).toFixed(3)} ms + RCAS ${Number(latest.rcasGpuTimeMs).toFixed(3)} ms GPU · capture/readback/helper wall time is separate`
+      : 'Native GPU timestamps unavailable; preview/readback timings are not game frame time.';
   } else if (initializedUpscaler) {
-    frameSummary.textContent = `${initializedUpscaler.id.toUpperCase()} initialized · no processed frames confirmed`;
+    frameSummary.textContent = `${initializedUpscaler.id.toUpperCase()} initialized · no live webpage frames confirmed`;
     gpuTimeSummary.textContent = 'No frame timing is reported until a native pass processes a real frame.';
   } else {
-    frameSummary.textContent = 'No native upscaler active; no frame counter is available.';
-    gpuTimeSummary.textContent = 'GPU timings unavailable · no upscaler frames have been processed.';
+    frameSummary.textContent = 'No native upscaler active; no general-page frame counter is available.';
+    gpuTimeSummary.textContent = 'GPU timings unavailable · FSR test-scene capture has not been run.';
   }
 
   const displayNames = {
@@ -579,11 +750,13 @@ function renderPerformancePanel(state) {
         : `${state.state} · no unverified graphics path is enabled.`;
   } else {
     compactMode.textContent = `Manual · ${displayNames[selectedMode]}`;
-    compactDetail.textContent = state.state === 'UNSUPPORTED' || state.state === 'FAILED'
-      ? `${state.state} · safe Chromium fallback; no upscaling.`
-      : selectedMode === 'wasm'
-        ? 'WASM runtime only; it does not upscale images.'
-        : `${state.state} · page rendering remains Chromium unless native frame evidence appears.`;
+    compactDetail.textContent = selectedMode === 'fsr' && state.state === 'COMPATIBLE'
+      ? 'FSR1 is available only for the opt-in WebGL2 capture preview; regular pages remain Chromium.'
+      : state.state === 'UNSUPPORTED' || state.state === 'FAILED'
+        ? `${state.state} · safe Chromium fallback; no page upscaling.`
+        : selectedMode === 'wasm'
+          ? 'WASM runtime only; it does not upscale images.'
+          : `${state.state} · page rendering remains Chromium unless a native page-frame path is verified.`;
   }
 
   const errorBox = document.querySelector('#performance-error');
@@ -734,8 +907,11 @@ function autoSelectIfEnabled() {
   saveGraphicsPreferences();
 }
 
-async function refreshGraphicsDiagnostics() {
-  if (graphicsRefreshPending) return;
+async function refreshGraphicsDiagnostics({ force = false } = {}) {
+  if (graphicsRefreshPending) {
+    if (force) graphicsRefreshQueued = true;
+    return;
+  }
   graphicsRefreshPending = true;
   const summary = document.querySelector('#graphics-capabilities');
   summary.textContent = 'Querying Electron GPU information, Chromium graphics APIs, and WebAssembly…';
@@ -768,14 +944,34 @@ async function refreshGraphicsDiagnostics() {
     const gpuText = devices.length ? devices.join('; ') : nativeInfo?.gpuInfoError || 'No GPU device details reported';
     const chromium = nativeInfo?.chromiumVersion ? `Chromium ${nativeInfo.chromiumVersion}` : 'Chromium version not available';
     const electron = nativeInfo?.electronVersion ? `Electron ${nativeInfo.electronVersion}` : 'Web preview (not the desktop runtime)';
-    summary.textContent = `${electron} · ${chromium} · GPU: ${gpuText} · WebGPU: ${webgpu.status} · WebGL2: ${webgl2.status} · DLSS/FSR: no native processing path.`;
+    const fsrAdapters = nativeInfo?.nativeFsrAdapters?.adapters || [];
+    const compatibleFsrAdapters = fsrAdapters.filter((adapter) => !adapter.softwareAdapter && adapter.fsr1Compatible);
+    const glRenderer = nativeInfo?.graphicsApiDetails?.glRenderer || nativeInfo?.graphicsApiDetails?.glImplementationParts || 'Chromium renderer API details not reported';
+    const fsrStatus = nativeInfo?.nativeFsrAdapters?.available
+      ? `${compatibleFsrAdapters.length} compatible non-software D3D12 adapter(s); capture test is manual and test-scene-only`
+      : nativeInfo?.nativeFsrAdapters?.error || 'Native helper not present in this runtime';
+    summary.textContent = `${electron} · ${chromium} · GPU: ${gpuText} · Chromium GL: ${glRenderer} · WebGPU: ${webgpu.status} · WebGL2: ${webgl2.status} · D3D12 FSR1: ${fsrStatus}`;
+    const fsrTestSupport = document.querySelector('#fsr-test-state');
+    if (fsrTestSupport && !fsrCaptureRunning) {
+      const fsrFeature = graphicsCapabilities?.technologies?.fsr;
+      fsrTestSupport.textContent = fsrFeature?.state || 'NOT RUN';
+      fsrTestSupport.dataset.state = lifecycleStateClass(fsrFeature?.state);
+      if (!fsrLastResult) {
+        setFsrTestStatus(fsrFeature?.compatible
+          ? 'Ready for the controlled WebGL2 scene. Processing starts only after you select a hardware adapter and click Capture + process.'
+          : fsrFeature?.reason || 'Native FSR1 capture support has not been verified in this runtime.', fsrFeature?.compatible ? 'info' : 'error');
+      }
+    }
     document.querySelector('#graphics-raw').textContent = JSON.stringify({
       platform: nativeInfo?.platform || navigator.platform,
       architecture: nativeInfo?.architecture || 'browser preview',
       electronVersion: nativeInfo?.electronVersion || '',
       chromiumVersion: nativeInfo?.chromiumVersion || '',
       gpuDevices: nativeInfo?.gpuDevices || [],
+      chromiumGraphicsApiDetails: nativeInfo?.graphicsApiDetails || {},
       chromiumGpuFeatureStatus: nativeInfo?.featureStatus || 'Native diagnostics unavailable in web preview',
+      nativeD3D12FsrAdapters: nativeInfo?.nativeFsrAdapters || null,
+      lastFsrBrowserFrameReport: nativeInfo?.lastFsrReport || null,
       webgpu,
       webgl2,
       wasm,
@@ -791,6 +987,10 @@ async function refreshGraphicsDiagnostics() {
     renderGraphicsMode(selectedMode);
   } finally {
     graphicsRefreshPending = false;
+    if (graphicsRefreshQueued) {
+      graphicsRefreshQueued = false;
+      queueMicrotask(() => refreshGraphicsDiagnostics());
+    }
   }
 }
 
@@ -875,6 +1075,15 @@ document.querySelector('#graphics-mode-select').addEventListener('change', (even
   selectGraphicsMode(event.currentTarget.value);
 });
 document.querySelector('#performance-wasm-run').addEventListener('click', runWasmDiagnostic);
+document.querySelector('#fsr-open-test-scene').addEventListener('click', openFsrTestScene);
+document.querySelector('#fsr-capture-run').addEventListener('click', runFsrCaptureTest);
+document.querySelector('#fsr-capture-cancel').addEventListener('click', cancelFsrCaptureTest);
+document.querySelector('#fsr-adapter-select').addEventListener('change', (event) => {
+  const value = Number(event.currentTarget.value);
+  fsrAdapterIndexPreference = Number.isInteger(value) && value >= 0 ? value : null;
+  saveGraphicsPreferences();
+  updateFsrLabControls();
+});
 document.querySelector('#performance-diagnostics').addEventListener('click', () => {
   graphicsDialog.showModal();
   scheduleLayout();
@@ -940,6 +1149,30 @@ if (browser) {
   browser.onState(updateState);
   browser.onActive((slot) => switchCore(Number(slot)));
   browser.onShortcut(handleDesktopShortcut);
+  browser.onFsrProgress((progress) => {
+    if (!fsrCaptureRunning || !progress?.jobId) return;
+    if (!fsrCaptureJobId) fsrCaptureJobId = progress.jobId;
+    if (progress.jobId !== fsrCaptureJobId) return;
+    if (progress.state === 'PROCESSING') {
+      setFsrTestStatus(`Captured browser frame ${progress.frameIndex}/${progress.frameCount} (${progress.width}×${progress.height}); starting the separate D3D12 FSR1 helper. The original tab keeps rendering normally.`, 'working');
+    } else if (progress.state === 'INITIALIZED') {
+      setFsrLifecycleState('INITIALIZED');
+      setFsrTestStatus(`The D3D12 FSR1 helper initialized its pipelines for frame ${progress.frameIndex}/${progress.frameCount}; no ordinary page renderer is attached.`, 'working');
+    } else if (progress.state === 'NATIVE PROCESSING') {
+      setFsrLifecycleState('PROCESSING FRAMES');
+      setFsrTestStatus(`D3D12 FSR1 EASU + RCAS is processing browser-captured frame ${progress.frameIndex}/${progress.frameCount}. The original tab keeps rendering normally.`, 'working');
+    } else if (progress.state === 'FRAME PROCESSED') {
+      setFsrLifecycleState('COMPATIBLE');
+      setFsrTestStatus(`FSR1 validated frame ${progress.frameIndex}/${progress.frameCount}: ${progress.inputWidth}×${progress.inputHeight} → ${progress.outputWidth}×${progress.outputHeight} on ${progress.adapter}${progress.softwareAdapter ? ' (WARP software)' : ''}.`, 'working');
+    } else if (progress.state === 'FAILED') {
+      setFsrLifecycleState('FAILED');
+      setFsrTestStatus(progress.error || 'FSR test failed.', 'error');
+    } else if (progress.state === 'CANCELLED') {
+      setFsrLifecycleState('COMPATIBLE');
+      setFsrTestStatus(progress.error || 'FSR test was cancelled.', 'error');
+    }
+    updateFsrLabControls();
+  });
   browser.onDownloads((items) => {
     const button = document.querySelector('#downloads-open');
     const activeCount = items.filter((item) => item.state === 'in-progress').length;

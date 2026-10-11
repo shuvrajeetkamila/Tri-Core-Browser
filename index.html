@@ -111,9 +111,30 @@
                 <dl><div><dt>Runtime</dt><dd id="performance-wasm-runtime">Checking</dd></div><div><dt>Upscaling</dt><dd>None · WASM is not an image upscaler</dd></div><div><dt>Last diagnostic</dt><dd id="performance-wasm-result">Not run</dd></div></dl>
               </article>
             </div>
+            <section class="performance-fsr-lab" aria-labelledby="fsr-lab-title">
+              <div class="performance-fsr-lab-heading">
+                <div><span class="performance-lab-kicker">CONTROLLED INTEGRATION TEST</span><h3 id="fsr-lab-title">Browser-frame FSR1 capture</h3></div>
+                <span id="fsr-test-state" class="performance-state-chip" data-state="detected">NOT RUN</span>
+              </div>
+              <p id="fsr-test-scope">Open the bundled animated WebGL2 scene. On explicit action, TRI-CORE captures that visible WebContentsView, reads a PNG back, processes it in a separate D3D12 FSR1 helper, and previews the result. This is not zero-copy, real-time, or arbitrary-page upscaling.</p>
+              <div class="performance-fsr-controls">
+                <button class="secondary-button" type="button" id="fsr-open-test-scene">Open WebGL2 test scene in active core</button>
+                <label class="performance-control fsr-adapter-control"><span>FSR1 D3D12 adapter</span><select id="fsr-adapter-select" aria-label="Select an FSR1-compatible hardware D3D12 adapter" disabled><option value="">No FSR-compatible hardware adapter detected</option></select></label>
+                <button class="secondary-button performance-run-button" type="button" id="fsr-capture-run" disabled>Capture + process 3 frames</button>
+                <button class="secondary-button performance-run-button" type="button" id="fsr-capture-cancel" hidden>Cancel test</button>
+              </div>
+              <p id="fsr-test-status" class="performance-fsr-status" role="status" aria-live="polite">Not run. Ordinary browser pages continue to render through Chromium.</p>
+              <div id="fsr-test-result" class="performance-fsr-result" hidden>
+                <div class="performance-fsr-metrics"><strong id="fsr-test-metrics-title">No processed frame yet</strong><span id="fsr-test-metrics-detail"></span><small id="fsr-test-capture-paths"></small></div>
+                <div class="performance-fsr-preview-grid">
+                  <figure><figcaption>Captured WebGL2 frame</figcaption><img id="fsr-input-preview" alt="Original PNG screenshot captured from the bundled WebGL2 browser test scene" /></figure>
+                  <figure><figcaption>FSR1 EASU + RCAS output · diagnostic preview</figcaption><img id="fsr-output-preview" alt="AMD FSR 1.0.2 processed PNG returned for diagnostic preview" /></figure>
+                </div>
+              </div>
+            </section>
             <div class="performance-telemetry-grid">
               <div class="performance-telemetry-card"><strong>Detected graphics device</strong><span id="performance-gpu-name">Not queried</span><small id="performance-gpu-driver">Driver information not queried</small></div>
-              <div class="performance-telemetry-card"><strong>Graphics APIs reported by Chromium</strong><span id="performance-api-summary">WebGPU / WebGL not queried</span><small id="performance-native-api-summary">Native D3D12/Vulkan runtime not integrated or probed</small></div>
+              <div class="performance-telemetry-card"><strong>Graphics APIs reported by Chromium</strong><span id="performance-api-summary">WebGPU / WebGL not queried</span><small id="performance-native-api-summary">Native D3D12 adapter query not run</small></div>
               <div class="performance-telemetry-card"><strong>Upscaler frame processing</strong><span id="performance-frame-summary">No native upscaler active</span><small id="performance-gpu-time-summary">GPU timings unavailable · no upscaler frames processed</small></div>
             </div>
             <p class="performance-error" id="performance-error" role="alert" hidden></p>

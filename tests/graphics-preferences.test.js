@@ -26,12 +26,14 @@ test('graphics and performance-panel preferences have safe defaults without stor
     priority: 'dlss-first',
     mode: 'wasm',
     panelCollapsed: true,
+    fsrAdapterIndex: null,
   });
   assert.deepEqual(loadGraphicsPreferences({}), {
     selection: 'auto',
     priority: 'dlss-first',
     mode: 'wasm',
     panelCollapsed: true,
+    fsrAdapterIndex: null,
   });
 });
 
@@ -47,6 +49,7 @@ test('normalizes invalid saved fields while retaining valid persistent choices',
     priority: 'fsr-first',
     mode: 'fsr',
     panelCollapsed: false,
+    fsrAdapterIndex: null,
   });
 
   storage.setItem(GRAPHICS_PREFERENCES_STORAGE_KEY, JSON.stringify({
@@ -60,6 +63,7 @@ test('normalizes invalid saved fields while retaining valid persistent choices',
     priority: 'dlss-first',
     mode: 'wasm',
     panelCollapsed: true,
+    fsrAdapterIndex: null,
   });
 });
 
@@ -70,12 +74,14 @@ test('persists valid policy and collapsed state for the next renderer startup', 
     priority: 'fsr-first',
     mode: 'standard',
     panelCollapsed: false,
+    fsrAdapterIndex: 2,
   }, storage), true);
   assert.deepEqual(loadGraphicsPreferences(storage), {
     selection: 'manual',
     priority: 'fsr-first',
     mode: 'standard',
     panelCollapsed: false,
+    fsrAdapterIndex: 2,
   });
 });
 
@@ -86,6 +92,7 @@ test('denied, malformed, or unavailable storage is non-fatal', () => {
     priority: 'dlss-first',
     mode: 'wasm',
     panelCollapsed: true,
+    fsrAdapterIndex: null,
   });
 
   const denied = {
@@ -104,5 +111,6 @@ test('saves normalized values instead of persisting unsupported mode names', () 
     priority: 'dlss-first',
     mode: 'wasm',
     panelCollapsed: false,
+    fsrAdapterIndex: null,
   });
 });

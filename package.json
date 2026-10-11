@@ -13,8 +13,8 @@
     "build": "vite build",
     "test": "node --test",
     "desktop": "npm run build && electron .",
-    "package:win": "npm run build && electron-builder --win portable --x64",
-    "package:win:installer": "npm run build && electron-builder --win nsis --x64"
+    "package:win": "npm run build && cmake -S native/fsr1-poc -B build/fsr1-poc -A x64 && cmake --build build/fsr1-poc --config Release --parallel && electron-builder --win portable --x64",
+    "package:win:installer": "npm run build && cmake -S native/fsr1-poc -B build/fsr1-poc -A x64 && cmake --build build/fsr1-poc --config Release --parallel && electron-builder --win nsis --x64"
   },
   "devDependencies": {
     "@fontsource-variable/dm-sans": "5.3.0",
@@ -57,6 +57,16 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
-    }
+    },
+    "extraResources": [
+      {
+        "from": "build/fsr1-poc/Release",
+        "to": "native/fsr1",
+        "filter": [
+          "TriCoreFsr1Poc.exe",
+          "amd/**/*"
+        ]
+      }
+    ]
   }
 }

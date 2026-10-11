@@ -1,23 +1,30 @@
 # Test results
 
-**Recorded:** 2026-10-11 UTC
-**Current source:** working branch `arena/66abfdc9-tri-core-browser`; commit SHA will be recorded by the Windows Actions report after push.
+**Recorded:** 2026-10-11 (UTC)
+**Source branch:** `arena/66abfdc9-tri-core-browser`
+**Source state:** current branch revision; Windows CI results must be tied to the exact pushed commit before being treated as verified.
 
-| Check | Result | Evidence / notes |
+## Local Linux verification
+
+| Check | Result | Evidence / limits |
 | --- | --- | --- |
-| `npm ci` on Linux x64 / Node 22.22.3 | **PASS** | Lockfile restore completed. NPM reported 8 moderate build/development-tree audit findings; no high/critical finding was reported. |
-| `npm test` | **PASS** | 15 Node tests passed: address parsing, five-mode controller/fallback policy, real WebAssembly compilation/execution and WASM source contract. |
-| `npm run build` | **PASS** | Vite 8.3.4 generated the production renderer (`dist/`). |
-| `node --check electron/main.cjs electron/preload.cjs src/main.js` | **PASS** | Main process, preload, and renderer syntax checks. |
-| `npm audit --audit-level=high` plus `node scripts/dependency-audit.cjs` | **PASS** | Full lockfile audit includes Electron and build tools: 8 moderate, 0 high, 0 critical. JSON/tree reports are retained by CI; the gate fails on high or critical findings. |
-| Graphics policy: Standard mode | **PASS** | Controller resolves to Chromium, with no upscaler claimed. |
-| Graphics policy: DLSS/FSR fallback with vendor-like GPU labels | **PASS** | Tests confirm a detected GPU never activates an absent integration and the effective path remains Standard. |
-| Hybrid policy | **PASS** | Controller reports partial WASM diagnostic and standard fallback; no upscaler is stacked. |
-| WASM correctness under Node/V8 | **PASS** | Real module compiles, `add(19, 23)` returns `42`, and 2,000-call checksum matches `3,000`. Repeatable benchmark is unit-tested. |
-| Actual packaged Windows x64 executable | **NOT BUILT IN THIS LINUX WORKSPACE** | This host has no Windows compiler/SDK/runtime. Check the Windows Actions run and its commit-specific `BUILD_REPORT.txt` artifact for whether CI produced one. |
-| Packaged Electron app launch, website navigation, local WASM, tab lifecycle and HTTPS probe on Windows | **NOT RUN IN THIS WORKSPACE** | `--smoke-test` is implemented as a required Windows-workflow step. Its exact per-commit result is in the smoke log/report; HTTPS is recorded as BLOCKED rather than bypassing TLS if outbound access is unavailable. |
-| DLSS runtime on NVIDIA hardware | **NOT IMPLEMENTED / NOT TESTED** | No Streamline integration or licensed runtime components are shipped; no compatible hardware/SDK session was available. |
-| FSR runtime on AMD hardware | **NOT IMPLEMENTED / NOT TESTED** | No FidelityFX integration/render path is shipped; no compatible hardware test was available. |
-| Browser-wide upscaling / performance or image quality | **NOT IMPLEMENTED / NOT TESTED** | Electron's public `WebContentsView` API used here does not provide the required native per-frame inputs or swap-chain bridge. No measurements are claimed. |
+| `npm test` | **PASS — 34/34** | Node tests cover URL parsing, graphics lifecycle/priority/fallback, persistent preferences, accessible panel disclosure behavior, real WebAssembly execution, FSR capture request/context/size limits, native argument construction, per-frame bilinear-reference paths, and browser-PNG report validation. |
+| `npm run build` | **PASS** | Vite 8.3.4 production renderer build completed. This does not build the Electron main process as a package or compile the Windows helper. |
+| JavaScript syntax checks | **PASS** | Checked `electron/main.cjs`, `electron/preload.cjs`, `electron/fsr1-bridge.cjs`, `src/main.js`, `src/graphics-preferences.js`, and `src/graphics-controller.js` with `node --check`. |
+| `git diff --check` | **PASS** | No whitespace errors. |
+| Workflow/package JSON syntax | **PASS** | `js-yaml` parsed all three GitHub workflow files; `package.json` parsed as valid JSON. PowerShell script syntax remains unverified on Linux. |
+| `npm audit --audit-level=high` | **PASS (threshold)** | Fresh audit reports 8 moderate, 0 high, 0 critical findings. `npm audit fix --force` was not run because it requests a breaking electron-builder downgrade. |
 
-Historical Windows build logs found during the initial audit belong to another unmerged branch and are not counted as results for this change. This table records evidence available from the Linux workspace at review time; the Windows Actions run and its uploaded report/log are authoritative for each exact source commit. The packaging script appends that build's commit-specific Windows verification to the copy of this document inside a successfully smoke-tested portable ZIP.
+## Current-revision Windows validation — not yet run
+
+| Gate | Result | Required evidence |
+| --- | --- | --- |
+| MSVC/CMake build of `TriCoreFsr1Poc.exe` and bundled AMD shader inputs | **NOT RUN** | Windows Actions must compile the D3D12/WIC helper and package the helper/resources. Linux Arena does not have MSVC or the Windows SDK. |
+| Packaged Windows x64 portable app | **NOT BUILT** | Requires the Windows packaging job. A previous revision's artifact is not proof for this revision. |
+| Packaged WebContentsView → `capturePage()` PNG → FSR1 → preview on WARP | **NOT RUN** | Required smoke opens the bundled animated WebGL2 scene, varies the WebContentsView size, requires three unique captured PNG frames at three distinct resolutions, processes them via WARP, validates per-frame reports plus input/output/bilinear-reference PNGs and unique reference paths, and retains captures. This gate is implemented but not yet executed for this source. |
+| Physical GPU / AMD-vendor path | **NOT RUN** | WARP is software. Run the helper with `--hardware --adapter-index N` on identified physical hardware and review adapter model/vendor/driver/API/features, reports and captures. |
+| NVIDIA DLSS / Frame Generation | **NOT IMPLEMENTED / NOT TESTED** | No authorized Streamline/DLSS runtime, native controlled renderer or NVIDIA hardware result is present. |
+| Arbitrary webpage, game, WebGPU, video, DRM, cloud-stream or external-app upscaling | **UNSUPPORTED / NOT TESTED** | No supported Chromium compositor texture/swap-chain bridge or such integration is included. |
+| Performance improvement / image-quality superiority | **NOT CLAIMED** | Screenshot, native wall/fence and GPU timings (when available) are diagnostic measurements. They are not general page FPS or evidence of a performance gain. |
+
+The native synthetic-pattern WARP job passed on an earlier commit, recorded in the historical implementation plan; that result does not validate the new PNG input, the packaged browser-to-FSR route, or the current source revision. After push, the Windows Actions logs and uploaded `TriCoreBrowser-Windows-x64` / `TriCore-FSR1-D3D12-WARP-POC` artifacts are authoritative for the exact commit. The portable ZIP is gated on successful browser-frame WARP evidence and contains the controlled input, FSR output, bilinear-reference captures, and per-frame reports.
