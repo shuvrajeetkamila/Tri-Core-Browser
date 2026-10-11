@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -82,13 +83,15 @@ test('native helper uses a fixed argument vector and never invokes a command she
 });
 
 test('each browser output frame maps to its own bilinear-reference capture path', () => {
+  const frameOnePath = path.join('captures', 'frame-001-fsr1-easu-rcas.png');
+  const frameTwoPath = path.join('captures', 'frame-002-fsr1-easu-rcas.png');
   assert.equal(
-    buildBilinearReferencePath('/captures/frame-001-fsr1-easu-rcas.png'),
-    '/captures/frame-001-fsr1-easu-rcas-bilinear-reference.png',
+    buildBilinearReferencePath(frameOnePath),
+    path.join('captures', 'frame-001-fsr1-easu-rcas-bilinear-reference.png'),
   );
   assert.notEqual(
-    buildBilinearReferencePath('/captures/frame-001-fsr1-easu-rcas.png'),
-    buildBilinearReferencePath('/captures/frame-002-fsr1-easu-rcas.png'),
+    buildBilinearReferencePath(frameOnePath),
+    buildBilinearReferencePath(frameTwoPath),
   );
   assert.throws(() => buildBilinearReferencePath(''), /output path is required/);
 });
