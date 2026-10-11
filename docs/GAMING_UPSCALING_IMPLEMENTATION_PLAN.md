@@ -11,7 +11,7 @@
 - Electron's public `WebContentsView` surface does not provide this app an arbitrary website's native color/depth/motion-vector resources or a supported page-frame/swap-chain handoff. Therefore a standalone native renderer or test texture is not browser integration.
 - Chromium WebAssembly is available and now has a startup probe that really compiles and instantiates a module and checks `add(19, 23) === 42`. WASM remains a separate CPU/runtime capability, not an image upscaler.
 - The existing browser functionality and security boundary remain in place: sandboxed web contents, context isolation, no renderer Node access, no TLS bypass, and no access to another process's memory or graphics resources.
-- A Windows-only native C++/D3D12 FSR 1 harness is now authored as an isolated synthetic-texture POC. It uses pinned AMD source and has a WARP-only CI test path. The Windows compiler, D3D12 runtime, WARP execution, and physical GPU are not available in this Linux workspace; Windows-runner results must be recorded separately when produced.
+- A Windows-only native C++/D3D12 FSR 1 harness is now authored as an isolated synthetic-texture POC. It uses pinned AMD source and has a WARP-only CI test path. The Windows compiler, D3D12 runtime, and GPU are not available in this Linux workspace; Windows-runner build/WARP results are recorded separately below. Physical-GPU validation remains unrun.
 
 ## Staged implementation
 
@@ -26,14 +26,14 @@ Keep the three Chromium cores, navigation, tabs, profile, downloads, security mo
 - Automatic selection honors DLSS → FSR → WASM (or the selectable FSR-first order), but chooses a native upscaler only when a compatible, initialized native implementation is evidenced. In this build it falls back to the verified WASM runtime as a *status/default choice*, while clearly reporting that page rendering remains Chromium and no scaling occurs.
 - A manual unsupported/failed DLSS or FSR request reports the reason and safely retains standard Chromium rendering. No driver installation is attempted.
 - Add the keyboard-operable, semantic, persisted collapsible performance panel. Collapsing only hides its UI controls and schedules layout; it does not disable or stop browser processing.
-- Automated evidence: `npm test` passes 27/27 tests, including persisted preference/disclosure checks and a source-level keyboard/accessibility check; `npm run build` passes. Electron packaged runtime and assistive-technology behavior were not manually exercised in this Linux workspace.
+- Automated evidence: `npm test` passes 27/27 tests, including persisted preference/disclosure checks and a source-level keyboard/accessibility check; `npm run build` passes. The Windows packaged-app build and existing launch smoke test also pass for this revision ([run 38136631787](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38136631787)). That smoke test does not manually exercise the panel with a keyboard or assistive technology.
 
-### Stage 2 — Official AMD FSR 1.0.2 native proof-of-concept (**source and CI authored; Windows execution pending**)
+### Stage 2 — Official AMD FSR 1.0.2 native proof-of-concept (**Windows build/WARP smoke passes; physical-GPU validation pending**)
 
 - Pin the official `GPUOpen-Effects/FidelityFX-FSR` source at `a21ffb8f6c13233ba336352bdff293894c706575`. Vendor only the FSR1 portability header, EASU/RCAS header, AMD sample shader wrapper, and required MIT notices. Exact upstream links and SHA-256 hashes are in `native/fsr1-poc/third_party/amd/UPSTREAM.md`.
 - `native/fsr1-poc/` contains a separate Windows D3D12 executable. It creates a deterministic **app-owned** 320×192 test image, executes EASU then RCAS into a 640×384 output texture, reads back and sanity-checks the output, and writes input/bilinear/FSR captures plus adapter/API/driver-interface/timing/frame-count evidence.
 - `--hardware` requires a non-software D3D12 adapter and does not fall back. `--warp` explicitly selects Microsoft's software WARP adapter; any WARP report marks the physical-GPU gate `NOT RUN`. Timings are reported as unavailable rather than zero when the queue does not expose timestamps.
-- `.github/workflows/fsr1-native-poc.yml` is configured to build and exercise the source on Windows WARP and upload the software-only captures/report. **That Windows workflow has not run yet in this checkout.** No physical GPU evidence exists.
+- `.github/workflows/fsr1-native-poc.yml` built successfully on Windows and ran the WARP pipeline for one synthetic frame on this revision ([workflow run 38136631764](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38136631764), commit `b41eea81fa5b54cbaee7359cfe67487f395228fb`). Its validation checked `PASS`, `softwareAdapter: true`, `physicalGpuGate: NOT RUN`, one processed frame, and three non-empty captures; the uploaded artifact is `TriCore-FSR1-D3D12-WARP-POC` (artifact `11700999200`). WARP confirms shader/pipeline execution and readback only. No physical GPU or AMD-vendor hardware evidence exists.
 - This POC does not capture a website, game, or browser surface and does not enable the browser FSR controls. Native POC success is not arbitrary-page compatibility.
 
 ### Stage 3 — NVIDIA DLSS / Streamline (**blocked**)
@@ -56,21 +56,21 @@ Run the native harness on real compatible hardware and record adapter, vendor, d
 | `npm test` | **PASS** | 27 tests passed; includes graphics policy/fallback, preference persistence, disclosure markup, and real WASM compile/instantiate/execute tests. |
 | `npm run build` | **PASS** | Vite production renderer build completed. This is not the Electron Windows package. |
 | `npm audit --audit-level=high` | **PASS (threshold)** | Exit 0; audit still reports 8 moderate, 0 high/critical. No `npm audit fix --force` was run. |
-| Native MSVC/CMake compile | **NOT RUN** | Linux workspace has no Windows compiler/CMake/D3D12 runtime. Windows workflow is authored but pending execution. |
-| Native D3D12 WARP EASU/RCAS frame | **NOT RUN** | No Windows-runner artifact for this checkout yet. |
-| Packaged Electron launch on this workspace | **NOT RUN** | Local Electron download/launch is unavailable here; the prior alpha.2 Windows Actions result is not evidence for this revision. |
+| Native MSVC/CMake compile | **PASS (Windows runner)** | [Workflow `38136631764`](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38136631764) configured and built `TriCoreFsr1Poc` with the Windows toolchain. |
+| Native D3D12 WARP EASU/RCAS frame | **PASS (software-only)** | Same workflow executed one synthetic frame and uploaded three captures plus reports in artifact `TriCore-FSR1-D3D12-WARP-POC` (artifact `11700999200`). Physical-GPU gate remains `NOT RUN`. |
+| Windows portable Electron build and launch smoke test | **PASS** | Current-revision [workflow `38136631787`](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38136631787) built the x64 portable app and passed its packaged `--smoke-test`; artifact `TriCoreBrowser-Windows-x64` (artifact `11701785530`). Local Linux Electron launch remains unavailable. |
 
 ## Acceptance-gate ledger (A–G)
 
 | Gate | Status | Evidence / remaining exit condition |
 | --- | --- | --- |
-| A — Native FSR processing on a physical GPU | **NOT RUN** | No physical GPU is attached. The WARP workflow is not a substitute; run `--hardware` and retain its adapter/report/captures on a real device. AMD-vendor-specific coverage is separately reported by the harness. |
+| A — Native FSR processing on a physical GPU | **NOT RUN** | Windows WARP pipeline/build passed ([`38136631764`](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38136631764)), but WARP is software. No physical GPU is attached; run `--hardware` and review adapter identity/report/captures on a real device. AMD-vendor-specific coverage is separately reported by the harness. |
 | B — Browser-rendered page through integrated FSR | **BLOCKED** | No supported Chromium page texture/compositor bridge; the native harness only processes its own synthetic texture. |
 | C — DLSS initialization and real frame processing | **NOT RUN** | No authorized Streamline/DLSS runtime or controlled renderer/hardware evidence. |
 | D — WASM capability and real execution | **PASS** | Startup probe compiles, instantiates, and checks a real module; tests also execute the bounded benchmark and verify its checksum. This is not upscaling. |
 | E — Detection, priority/manual selection, lifecycle, safe fallback | **PASS (automated policy/build)** | Tests cover distinct lifecycle states, vendor detection without inferred compatibility, priority, failures, and safe fallback. Live packaged-Electron capability observations remain unrun on this revision. |
 | F — Accessible persistent collapsible panel | **PARTIAL** | Semantic button/`aria-expanded`, live status, persisted preference, and renderer build are present. Manual keyboard/screen-reader audit and runtime regression validation remain unrun. |
-| G — Windows app build and graphics-feature validation | **PARTIAL** | Current renderer tests/build pass. The Windows browser package and new native WARP workflow for this exact revision are pending; previous alpha.2 package results do not cover these changes. |
+| G — Windows app build and browser regression | **PASS (build + smoke scope)** | On current commit `b41eea8`, the Windows x64 portable app built and passed its packaged smoke test ([`38136631787`](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38136631787)); Linux tests/build also pass. Native D3D12 WARP source/build/frame smoke passes separately ([`38136631764`](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38136631764)). Physical-GPU, actual browser-page upscaling, and DLSS validation remain outside this gate and are not passed. |
 
 ## Explicit scope and claims
 
