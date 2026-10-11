@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { runWasmBenchmark } from '../src/wasm-benchmark.js';
+import { probeWasmCapability, runWasmBenchmark } from '../src/wasm-benchmark.js';
+
+test('startup capability probe really compiles, instantiates, and executes WebAssembly', async () => {
+  const result = await probeWasmCapability();
+  assert.deepEqual(result, { detected: true, compatible: true, initialized: true, failed: false, answer: 42 });
+});
 
 test('compiles and executes the real WASM add module with the expected result', async () => {
   const result = await runWasmBenchmark(2_000);

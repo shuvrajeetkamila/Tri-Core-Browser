@@ -2,8 +2,9 @@ import '@fontsource-variable/dm-sans';
 import '@fontsource-variable/manrope';
 import './styles.css';
 import { normalizeAddress } from './url-utils.js';
-import { GRAPHICS_MODES, resolveGraphicsMode } from './graphics-controller.js';
-import { runWasmBenchmark } from './wasm-benchmark.js';
+import { chooseAutomaticMode, detectGraphicsCapabilities, GRAPHICS_MODES, resolveGraphicsMode } from './graphics-controller.js';
+import { probeWasmCapability, runWasmBenchmark } from './wasm-benchmark.js';
+import { loadGraphicsPreferences, saveGraphicsPreferences as saveGraphicsPreferenceRecord } from './graphics-preferences.js';
 
 const CORE_COUNT = 3;
 const browser = window.triCore ?? null;
@@ -18,13 +19,29 @@ let focusedPane = null;
 let syncNavigation = false;
 let toastTimer;
 let layoutFrame = 0;
-let selectedMode = 'standard';
+const graphicsPreferences = loadGraphicsPreferences();
+let graphicsSelection = graphicsPreferences.selection;
+let graphicsPriority = graphicsPreferences.priority;
+let selectedMode = graphicsPreferences.mode;
+let performancePanelCollapsed = graphicsPreferences.panelCollapsed;
+let wasmCapability = { detected: typeof WebAssembly === 'object', compatible: false, initialized: false, failed: false };
 let wasmResult = null;
 let wasmRunning = false;
+let graphicsRefreshPending = false;
 let graphicsInfo = null;
+let graphicsCapabilities = detectGraphicsCapabilities({ wasm: wasmCapability });
 let utilityKind = 'bookmarks';
 
 if (browser) document.body.classList.add('desktop-mode');
+
+function saveGraphicsPreferences() {
+  saveGraphicsPreferenceRecord({
+    selection: graphicsSelection,
+    priority: graphicsPriority,
+    mode: selectedMode,
+    panelCollapsed: performancePanelCollapsed,
+  });
+}
 
 function showToast(message) {
   toast.textContent = message;
@@ -433,46 +450,200 @@ async function showUtility(kind) {
   scheduleLayout();
 }
 
+function setPerformancePanelExpanded(expanded, { persist = true } = {}) {
+  performancePanelCollapsed = !expanded;
+  const panel = document.querySelector('#performance-panel');
+  const content = document.querySelector('#performance-panel-content');
+  const toggle = document.querySelector('#performance-panel-toggle');
+  const label = expanded ? 'Collapse performance panel' : 'Expand performance panel';
+  panel.classList.toggle('is-collapsed', !expanded);
+  content.hidden = !expanded;
+  toggle.setAttribute('aria-expanded', String(expanded));
+  toggle.setAttribute('aria-label', label);
+  toggle.title = label;
+  toggle.querySelector('.sr-only').textContent = label;
+  if (persist) saveGraphicsPreferences();
+  scheduleLayout();
+}
+
+function syncGraphicsPreferenceControls() {
+  document.querySelector('#graphics-selection').value = graphicsSelection;
+  document.querySelector('#graphics-priority').value = graphicsPriority;
+  document.querySelector('#graphics-priority').disabled = graphicsSelection !== 'auto';
+  document.querySelector('#graphics-mode-select').value = selectedMode;
+  document.querySelector('#graphics-mode-select').disabled = graphicsSelection === 'auto';
+}
+
+function lifecycleStateClass(state) {
+  return String(state || 'UNSUPPORTED').toLowerCase().replace(/\s+/g, '-');
+}
+
+function featureRuntimeLabel(feature) {
+  if (feature.failed) {
+    const count = feature.initialized ? ` · ${feature.processedFrames} confirmed frame(s)` : '';
+    return `FAILED · ${feature.error || 'runtime error'}${count}`;
+  }
+  if (feature.unsupported) return 'Not integrated · initialization not attempted · no frame counter';
+  if (!feature.initialized) return `${feature.state} · not initialized`;
+  return `${feature.state} · ${feature.processedFrames} confirmed frame(s)`;
+}
+
+function updateTechnologyCard(id, feature, hardwareLabel = '') {
+  const state = feature?.state || 'UNSUPPORTED';
+  const cssState = lifecycleStateClass(state);
+  const chip = document.querySelector(`#performance-${id}-state`);
+  const card = document.querySelector(`[data-technology="${id}"]`);
+  chip.textContent = state;
+  chip.dataset.state = cssState;
+  card.dataset.state = cssState;
+  document.querySelector(`#performance-${id}-detail`).textContent = feature?.reason || 'No runtime report is available.';
+  if (id === 'wasm') {
+    document.querySelector('#performance-wasm-runtime').textContent = feature?.initialized
+      ? `INITIALIZED · add(19, 23) = ${wasmCapability.answer ?? 42}`
+      : state;
+    document.querySelector('#performance-wasm-result').textContent = wasmResult?.passed
+      ? `${wasmResult.iterations.toLocaleString()} calls · ${wasmResult.elapsedMs.toFixed(2)} ms CPU/V8`
+      : wasmResult?.error ? `FAILED · ${wasmResult.error}` : 'Startup capability check only; throughput test not run';
+    return;
+  }
+  document.querySelector(`#performance-${id}-hardware`).textContent = hardwareLabel;
+  document.querySelector(`#performance-${id}-compatibility`).textContent = feature?.hardwareCompatibility || 'NOT TESTED';
+  document.querySelector(`#performance-${id}-runtime`).textContent = featureRuntimeLabel(feature || {});
+}
+
+function renderPerformancePanel(state) {
+  const report = graphicsCapabilities;
+  const primary = report?.gpu?.primaryDevice;
+  const gpuName = document.querySelector('#performance-gpu-name');
+  const gpuDriver = document.querySelector('#performance-gpu-driver');
+  if (primary) {
+    gpuName.textContent = `${primary.vendor || 'Unknown vendor'} ${primary.name || 'Unknown device'}${primary.active ? ' · Chromium active device' : ''}`;
+    gpuDriver.textContent = primary.driverVersion ? `Driver reported by Electron: ${primary.driverVersion}` : 'Driver version not reported by Electron';
+  } else {
+    gpuName.textContent = report?.gpu?.infoError ? 'GPU details unavailable' : 'No GPU device reported by Electron';
+    gpuDriver.textContent = report?.gpu?.infoError || 'Driver version not reported';
+  }
+
+  const nvidiaLabel = report?.gpu?.nvidiaDetected
+    ? 'NVIDIA GPU detected; DLSS feature compatibility not tested'
+    : report?.gpu?.infoError ? 'GPU identification unavailable' : 'No NVIDIA GPU reported';
+  const amdLabel = report?.gpu?.amdDetected
+    ? 'AMD GPU detected; FSR feature compatibility not tested'
+    : report?.gpu?.infoError ? 'GPU identification unavailable' : 'No AMD GPU reported';
+  updateTechnologyCard('dlss', report?.technologies?.dlss, nvidiaLabel);
+  updateTechnologyCard('fsr', report?.technologies?.fsr, amdLabel);
+  updateTechnologyCard('wasm', report?.technologies?.wasm);
+
+  const apis = report?.apis || {};
+  document.querySelector('#performance-api-summary').textContent = `WebGPU: ${apis.webgpu?.status || 'not queried'} · WebGL2: ${apis.webgl2?.status || 'not queried'}`;
+  document.querySelector('#performance-native-api-summary').textContent = 'D3D12/Vulkan are not directly probed; no native upscaler runtime is integrated.';
+
+  const upscaler = ['dlss', 'fsr'].map((id) => ({ id, ...report?.technologies?.[id] })).find((feature) => feature.processingFrames);
+  const initializedUpscaler = upscaler || ['dlss', 'fsr'].map((id) => ({ id, ...report?.technologies?.[id] })).find((feature) => feature.initialized && !feature.failed);
+  const frameSummary = document.querySelector('#performance-frame-summary');
+  const gpuTimeSummary = document.querySelector('#performance-gpu-time-summary');
+  if (upscaler) {
+    const dimensions = upscaler.inputWidth && upscaler.inputHeight && upscaler.outputWidth && upscaler.outputHeight
+      ? ` · ${upscaler.inputWidth}×${upscaler.inputHeight} → ${upscaler.outputWidth}×${upscaler.outputHeight}`
+      : '';
+    frameSummary.textContent = `${upscaler.id.toUpperCase()} · ${upscaler.processedFrames} confirmed frame(s)${dimensions}`;
+    gpuTimeSummary.textContent = upscaler.gpuTimeMs === null
+      ? 'GPU time not reported by the native backend'
+      : `GPU ${upscaler.gpuTimeMs.toFixed(3)} ms${upscaler.cpuTimeMs === null ? '' : ` · CPU ${upscaler.cpuTimeMs.toFixed(3)} ms`}`;
+  } else if (initializedUpscaler) {
+    frameSummary.textContent = `${initializedUpscaler.id.toUpperCase()} initialized · no processed frames confirmed`;
+    gpuTimeSummary.textContent = 'No frame timing is reported until a native pass processes a real frame.';
+  } else {
+    frameSummary.textContent = 'No native upscaler active; no frame counter is available.';
+    gpuTimeSummary.textContent = 'GPU timings unavailable · no upscaler frames have been processed.';
+  }
+
+  const displayNames = {
+    wasm: 'WASM runtime · no upscaling',
+    dlss: 'NVIDIA DLSS',
+    fsr: 'AMD FidelityFX FSR',
+    hybrid: 'Hybrid policy',
+    standard: 'Standard Chromium',
+  };
+  const compactMode = document.querySelector('#performance-summary-mode');
+  const compactDetail = document.querySelector('#performance-summary-detail');
+  const compactDot = document.querySelector('#performance-status-dot');
+  const compactState = lifecycleStateClass(state.state);
+  compactDot.dataset.state = state.stateClass || compactState;
+  if (graphicsSelection === 'auto') {
+    compactMode.textContent = `Automatic · ${displayNames[selectedMode]}`;
+    compactDetail.textContent = selectedMode === 'wasm'
+      ? 'WASM runtime verified; pages still use Chromium. No upscaling.'
+      : state.upscalerActive
+        ? `${state.state} · ${state.processedFrames} frame(s) confirmed.`
+        : `${state.state} · no unverified graphics path is enabled.`;
+  } else {
+    compactMode.textContent = `Manual · ${displayNames[selectedMode]}`;
+    compactDetail.textContent = state.state === 'UNSUPPORTED' || state.state === 'FAILED'
+      ? `${state.state} · safe Chromium fallback; no upscaling.`
+      : selectedMode === 'wasm'
+        ? 'WASM runtime only; it does not upscale images.'
+        : `${state.state} · page rendering remains Chromium unless native frame evidence appears.`;
+  }
+
+  const errorBox = document.querySelector('#performance-error');
+  const requestedUpscaler = selectedMode === 'dlss' || selectedMode === 'fsr';
+  const reportAnError = state.state === 'FAILED' || (graphicsSelection === 'manual' && requestedUpscaler && state.state === 'UNSUPPORTED');
+  errorBox.hidden = !reportAnError;
+  errorBox.textContent = reportAnError
+    ? `${state.message} This does not affect ordinary browsing.`
+    : '';
+}
+
 function renderGraphicsMode(mode) {
-  const gpu = graphicsInfo?.gpuDevices?.find((device) => device.active) || graphicsInfo?.gpuDevices?.[0];
-  const state = resolveGraphicsMode(mode, { wasmResult, gpu });
+  const requestedMode = GRAPHICS_MODES.some((item) => item.id === mode) ? mode : 'standard';
+  const state = resolveGraphicsMode(requestedMode, { capabilities: graphicsCapabilities, wasmResult });
   selectedMode = state.requestedMode;
 
   for (const control of document.querySelectorAll('[data-graphics-mode]')) {
-    control.setAttribute('aria-pressed', String(control.dataset.graphicsMode === selectedMode));
+    const id = control.dataset.graphicsMode;
+    const selected = id === selectedMode;
+    control.setAttribute('aria-pressed', String(selected));
     const chip = control.querySelector('[data-mode-status]');
     if (!chip) continue;
-    if (control.dataset.graphicsMode === selectedMode) {
-      chip.className = `mode-state-chip ${state.status === 'active' ? 'is-active' : state.status === 'partial' ? 'is-warning' : 'is-blocked'}`;
-      chip.textContent = state.status === 'active'
-        ? (selectedMode === 'standard' ? 'ACTIVE' : 'TEST PASSED')
-        : state.status === 'partial'
-          ? 'PARTIAL · FALLBACK'
-          : selectedMode === 'dlss' || selectedMode === 'fsr'
-            ? 'NOT INTEGRATED'
-            : 'TEST REQUIRED';
-    } else if (control.dataset.graphicsMode === 'standard') {
-      chip.className = `mode-state-chip ${state.effectiveMode === 'standard' ? 'is-active' : ''}`;
-      chip.textContent = state.effectiveMode === 'standard' ? 'FALLBACK PATH' : 'AVAILABLE';
+    const feature = graphicsCapabilities?.technologies?.[id];
+    if (id === 'standard') {
+      chip.className = 'mode-state-chip is-active';
+      chip.textContent = 'CHROMIUM ACTIVE';
+    } else if (id === 'dlss' || id === 'fsr') {
+      const lifecycleName = feature?.state || 'UNSUPPORTED';
+      const lifecycleClass = lifecycleStateClass(lifecycleName);
+      chip.className = `mode-state-chip ${lifecycleName === 'FAILED' ? 'is-blocked' : feature?.unsupported ? 'is-blocked' : feature?.active ? 'is-active' : 'is-warning'}`;
+      chip.dataset.state = lifecycleClass;
+      chip.textContent = lifecycleName;
+    } else if (id === 'wasm') {
+      chip.className = `mode-state-chip ${feature?.initialized ? 'is-active' : feature?.failed ? 'is-blocked' : 'is-warning'}`;
+      chip.dataset.state = lifecycleStateClass(feature?.state);
+      chip.textContent = `${feature?.state || 'DETECTED'} · NO UPSCALING`;
+    } else {
+      chip.className = 'mode-state-chip is-warning';
+      chip.textContent = 'POLICY ONLY · SAFE FALLBACK';
     }
   }
 
   const displayNames = {
-    wasm: 'WebAssembly diagnostic',
+    wasm: 'WebAssembly runtime (not an upscaler)',
     dlss: 'NVIDIA DLSS',
     fsr: 'AMD FidelityFX Super Resolution',
-    hybrid: 'Hybrid controller',
+    hybrid: 'Hybrid controller policy',
     standard: 'Standard Chromium rendering',
   };
-  const badges = { wasm: 'WASM', dlss: 'DLSS BLOCKED', fsr: 'FSR BLOCKED', hybrid: 'HYBRID FALLBACK', standard: 'STD' };
+  const badges = { wasm: 'WASM · NO UPSCALE', dlss: 'DLSS STATUS', fsr: 'FSR STATUS', hybrid: 'HYBRID POLICY', standard: 'STD' };
   document.querySelector('#graphics-mode-badge').textContent = badges[selectedMode];
-  document.querySelector('#graphics-mode-live').textContent = `${displayNames[selectedMode]} · ${state.status.toUpperCase()}`;
-  document.querySelector('#mode-report-state').textContent = state.status.toUpperCase();
-  document.querySelector('#mode-report-state').dataset.kind = state.status;
+  document.querySelector('#graphics-mode-live').textContent = `${displayNames[selectedMode]} · ${state.state}`;
+  document.querySelector('#mode-report-state').textContent = state.state;
+  document.querySelector('#mode-report-state').dataset.kind = state.stateClass;
   document.querySelector('#mode-report-title').textContent = displayNames[selectedMode];
   document.querySelector('#mode-report-message').textContent = state.message;
-  document.querySelector('#mode-report-backend').textContent = `Effective backend: ${state.backend}`;
-  document.querySelector('#mode-report-state').className = `mode-report-state state-${state.status}`;
+  document.querySelector('#mode-report-backend').textContent = `Effective renderer: ${state.backend}`;
+  document.querySelector('#mode-report-state').className = `mode-report-state state-${state.stateClass}`;
+  syncGraphicsPreferenceControls();
+  renderPerformancePanel(state);
   return state;
 }
 
@@ -484,14 +655,14 @@ function showWasmResult(result) {
   document.querySelector('#wasm-result-detail').textContent = result.passed
     ? `add(19, 23) = ${result.answer} · ${result.iterations.toLocaleString()} checked calls · ${result.elapsedMs.toFixed(2)} ms · ${result.operationsPerSecond?.toLocaleString() || '—'} calls/s. ${result.scope}.`
     : result.error;
+  if (graphicsCapabilities) renderGraphicsMode(selectedMode);
 }
 
 async function runWasmDiagnostic() {
   if (wasmRunning) return wasmResult;
   wasmRunning = true;
-  const button = document.querySelector('#wasm-run');
-  button.disabled = true;
-  button.textContent = 'Running…';
+  const buttons = [document.querySelector('#wasm-run'), document.querySelector('#performance-wasm-run')].filter(Boolean);
+  buttons.forEach((button) => { button.disabled = true; button.textContent = 'Running…'; });
   try {
     wasmResult = await runWasmBenchmark();
     showWasmResult(wasmResult);
@@ -502,17 +673,25 @@ async function runWasmDiagnostic() {
     return wasmResult;
   } finally {
     wasmRunning = false;
-    button.disabled = false;
-    button.textContent = 'Run WASM test';
+    buttons.forEach((button, index) => {
+      button.disabled = false;
+      button.textContent = index === 0 ? 'Run WASM test' : 'Run WASM test';
+    });
   }
 }
 
-async function selectGraphicsMode(mode) {
+async function selectGraphicsMode(mode, { manual = true } = {}) {
   if (!GRAPHICS_MODES.some((item) => item.id === mode)) return;
+  if (manual) graphicsSelection = 'manual';
+  selectedMode = mode;
   if (mode === 'wasm' || mode === 'hybrid') await runWasmDiagnostic();
+  saveGraphicsPreferences();
   const state = renderGraphicsMode(mode);
-  if (state.status === 'blocked') showToast(`${mode.toUpperCase()} is not active. Standard Chromium rendering remains in use.`);
-  else if (state.status === 'partial') showToast('Hybrid diagnostic passed; the upscaler is unavailable, so Chromium safely uses standard rendering.');
+  if (state.state === 'UNSUPPORTED' || state.state === 'FAILED') {
+    showToast(`${mode.toUpperCase()} is ${state.state.toLowerCase()}; standard Chromium rendering remains active.`);
+  } else if (mode === 'wasm') {
+    showToast('WebAssembly test completed. It is not a GPU upscaler; web pages still render through Chromium.');
+  }
 }
 
 async function queryWebGPU() {
@@ -520,45 +699,98 @@ async function queryWebGPU() {
     return { status: 'not exposed by this Chromium renderer' };
   }
   try {
-    const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'low-power' });
+    const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
     if (!adapter) return { status: 'API exposed; no compatible adapter returned' };
     let info = {};
     try { info = adapter.info || {}; } catch { /* Browser privacy may hide adapter identity. */ }
-    return { status: 'adapter available', vendor: info.vendor || '', architecture: info.architecture || '', device: info.device || '' };
+    return {
+      status: 'adapter available; no upscaler runtime implied',
+      vendor: info.vendor || '',
+      architecture: info.architecture || '',
+      device: info.device || '',
+      description: info.description || '',
+    };
   } catch (error) {
     return { status: `adapter request failed: ${error?.message || 'unknown error'}` };
   }
 }
 
-async function refreshGraphicsDiagnostics() {
-  const summary = document.querySelector('#graphics-capabilities');
-  summary.textContent = 'Querying Chromium GPU information and WebGPU adapter availability…';
+function queryWebGL2() {
   try {
-    const [nativeInfo, webgpu] = await Promise.all([
-      browser?.getGraphicsInfo() || Promise.resolve(null),
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('webgl2', { failIfMajorPerformanceCaveat: false });
+    if (!context) return { status: 'not available in this renderer' };
+    const version = context.getParameter(context.VERSION) || 'WebGL 2';
+    context.getExtension('WEBGL_lose_context')?.loseContext();
+    return { status: `${version}; capability only` };
+  } catch (error) {
+    return { status: `probe failed: ${error?.message || 'unknown error'}` };
+  }
+}
+
+function autoSelectIfEnabled() {
+  if (graphicsSelection !== 'auto') return;
+  selectedMode = chooseAutomaticMode(graphicsCapabilities, graphicsPriority);
+  saveGraphicsPreferences();
+}
+
+async function refreshGraphicsDiagnostics() {
+  if (graphicsRefreshPending) return;
+  graphicsRefreshPending = true;
+  const summary = document.querySelector('#graphics-capabilities');
+  summary.textContent = 'Querying Electron GPU information, Chromium graphics APIs, and WebAssembly…';
+  try {
+    const nativeInfoPromise = browser?.getGraphicsInfo()
+      .catch((error) => ({ gpuInfoError: error?.message || 'GPU information unavailable.' }))
+      || Promise.resolve(null);
+    const [nativeInfo, webgpu, webgl2, wasm] = await Promise.all([
+      nativeInfoPromise,
       queryWebGPU(),
+      Promise.resolve(queryWebGL2()),
+      probeWasmCapability(),
     ]);
     graphicsInfo = nativeInfo;
-    const deviceNames = nativeInfo?.gpuDevices?.map((device) => `${device.vendor} ${device.name}${device.active ? ' (active)' : ''}`) || [];
-    const gpuText = deviceNames.length ? deviceNames.join('; ') : nativeInfo?.gpuInfoError || 'No GPU device details reported';
+    wasmCapability = wasm;
+    graphicsCapabilities = detectGraphicsCapabilities({
+      gpuDevices: nativeInfo?.gpuDevices || [],
+      gpuInfoError: nativeInfo?.gpuInfoError || '',
+      featureStatus: nativeInfo?.featureStatus || {},
+      webgpu,
+      webgl2,
+      wasm,
+      integration: nativeInfo?.integration || {
+        dlss: { implemented: false, reason: 'No Streamline/DLSS native frame processor is compiled into this build.' },
+        fsr: { implemented: false, reason: 'No AMD FSR native frame processor is compiled into this build.' },
+      },
+    });
+    autoSelectIfEnabled();
+    const devices = nativeInfo?.gpuDevices?.map((device) => `${device.vendor} ${device.name}${device.active ? ' (active)' : ''}`) || [];
+    const gpuText = devices.length ? devices.join('; ') : nativeInfo?.gpuInfoError || 'No GPU device details reported';
     const chromium = nativeInfo?.chromiumVersion ? `Chromium ${nativeInfo.chromiumVersion}` : 'Chromium version not available';
     const electron = nativeInfo?.electronVersion ? `Electron ${nativeInfo.electronVersion}` : 'Web preview (not the desktop runtime)';
-    summary.textContent = `${electron} · ${chromium} · GPU: ${gpuText} · WebGPU: ${webgpu.status} · DLSS: not integrated · FSR: not integrated.`;
+    summary.textContent = `${electron} · ${chromium} · GPU: ${gpuText} · WebGPU: ${webgpu.status} · WebGL2: ${webgl2.status} · DLSS/FSR: no native processing path.`;
     document.querySelector('#graphics-raw').textContent = JSON.stringify({
       platform: nativeInfo?.platform || navigator.platform,
       architecture: nativeInfo?.architecture || 'browser preview',
+      electronVersion: nativeInfo?.electronVersion || '',
+      chromiumVersion: nativeInfo?.chromiumVersion || '',
       gpuDevices: nativeInfo?.gpuDevices || [],
       chromiumGpuFeatureStatus: nativeInfo?.featureStatus || 'Native diagnostics unavailable in web preview',
       webgpu,
-      integration: nativeInfo?.integration || {
-        wasm: 'The local renderer runs the controlled WebAssembly diagnostic.',
-        dlss: 'Not implemented; no native Streamline/DLSS render bridge.',
-        fsr: 'Not implemented; no native FidelityFX/FSR render bridge.',
-      },
+      webgl2,
+      wasm,
+      lifecycle: graphicsCapabilities,
     }, null, 2);
     renderGraphicsMode(selectedMode);
   } catch (error) {
-    summary.textContent = `Graphics diagnostics are unavailable: ${error?.message || 'unknown error'}. DLSS and FSR remain not integrated.`;
+    wasmCapability = { detected: typeof WebAssembly === 'object', compatible: false, initialized: false, failed: true, error: error?.message || 'Capability query failed.' };
+    graphicsCapabilities = detectGraphicsCapabilities({ wasm: wasmCapability, gpuInfoError: error?.message || 'Graphics diagnostics failed.' });
+    autoSelectIfEnabled();
+    summary.textContent = `Graphics diagnostics failed: ${error?.message || 'unknown error'}. No DLSS/FSR processing path is available.`;
+    document.querySelector('#graphics-raw').textContent = JSON.stringify({ error: error?.message || 'Graphics diagnostics failed.', lifecycle: graphicsCapabilities }, null, 2);
+    renderGraphicsMode(selectedMode);
+  } finally {
+    graphicsRefreshPending = false;
   }
 }
 
@@ -624,15 +856,36 @@ document.querySelector('#bookmarks-open').addEventListener('click', () => showUt
 document.querySelector('#history-open').addEventListener('click', () => showUtility('history'));
 document.querySelector('#downloads-open').addEventListener('click', () => showUtility('downloads'));
 document.querySelector('#settings-open').addEventListener('click', () => showUtility('settings'));
+document.querySelector('#performance-panel-toggle').addEventListener('click', () => {
+  setPerformancePanelExpanded(performancePanelCollapsed);
+});
+document.querySelector('#graphics-selection').addEventListener('change', (event) => {
+  graphicsSelection = event.currentTarget.value === 'manual' ? 'manual' : 'auto';
+  if (graphicsSelection === 'auto') autoSelectIfEnabled();
+  saveGraphicsPreferences();
+  renderGraphicsMode(selectedMode);
+});
+document.querySelector('#graphics-priority').addEventListener('change', (event) => {
+  graphicsPriority = event.currentTarget.value === 'fsr-first' ? 'fsr-first' : 'dlss-first';
+  autoSelectIfEnabled();
+  saveGraphicsPreferences();
+  renderGraphicsMode(selectedMode);
+});
+document.querySelector('#graphics-mode-select').addEventListener('change', (event) => {
+  selectGraphicsMode(event.currentTarget.value);
+});
+document.querySelector('#performance-wasm-run').addEventListener('click', runWasmDiagnostic);
+document.querySelector('#performance-diagnostics').addEventListener('click', () => {
+  graphicsDialog.showModal();
+  scheduleLayout();
+  refreshGraphicsDiagnostics();
+});
 document.querySelector('#graphics-toggle').addEventListener('click', () => {
   graphicsDialog.showModal();
   scheduleLayout();
   refreshGraphicsDiagnostics();
 });
-document.querySelector('#wasm-run').addEventListener('click', async () => {
-  await runWasmDiagnostic();
-  if (selectedMode === 'wasm' || selectedMode === 'hybrid') renderGraphicsMode(selectedMode);
-});
+document.querySelector('#wasm-run').addEventListener('click', runWasmDiagnostic);
 document.querySelectorAll('[data-graphics-mode]').forEach((button) => {
   button.addEventListener('click', () => selectGraphicsMode(button.dataset.graphicsMode));
 });
@@ -674,6 +927,10 @@ document.addEventListener('keydown', (event) => {
 });
 
 window.addEventListener('resize', scheduleLayout, { passive: true });
+window.addEventListener('focus', refreshGraphicsDiagnostics);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) refreshGraphicsDiagnostics();
+});
 if ('ResizeObserver' in window) {
   const resizeObserver = new ResizeObserver(scheduleLayout);
   resizeObserver.observe(grid);
@@ -705,4 +962,7 @@ if (browser) {
   document.querySelectorAll('[data-new-tab]').forEach((button) => { button.disabled = true; });
 }
 
-renderGraphicsMode('standard');
+setPerformancePanelExpanded(!performancePanelCollapsed, { persist: false });
+syncGraphicsPreferenceControls();
+renderGraphicsMode(selectedMode);
+refreshGraphicsDiagnostics();

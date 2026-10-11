@@ -387,3 +387,78 @@ h1 span { color: #8b96a9; font-weight: 500; }
   .dialog-heading h2 { font-size: 20px; }
   .utility-record { align-items: flex-start; }
 }
+
+/* Compact gaming-performance panel. Toggling it reflows only the UI; browser
+   WebContentsView instances remain alive and receive updated viewport bounds. */
+.performance-panel { margin: 0 0 18px; overflow: hidden; border: 1px solid #e2e7ef; border-radius: 14px; background: rgba(255,255,255,.94); box-shadow: 0 5px 20px rgba(38,52,78,.035); }
+.performance-panel-header { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(230px, .8fr) 52px; align-items: center; gap: 20px; min-height: 106px; padding: 15px 18px 15px 22px; }
+.performance-panel-title { min-width: 0; }
+.performance-panel-title .section-kicker { margin-bottom: 5px; }
+.performance-panel-title h1 { font-size: clamp(22px, 2vw, 30px); }
+.performance-panel-title > p { margin: 5px 0 0; color: #808b9d; font-size: 10px; line-height: 1.45; }
+.performance-compact-status { display: flex; min-width: 0; align-items: flex-start; gap: 10px; padding: 11px 13px; border: 1px solid #e8ecf2; border-radius: 10px; background: #fbfcfd; }
+.performance-compact-status > span:last-child { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.performance-compact-status strong { overflow: hidden; color: #455168; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.performance-compact-status small { color: #8994a5; font-size: 9px; line-height: 1.4; }
+.performance-status-dot { flex: 0 0 8px; width: 8px; height: 8px; margin-top: 3px; border-radius: 50%; background: #97a1b0; box-shadow: 0 0 0 3px #eef0f4; }
+.performance-status-dot[data-state="active"], .performance-status-dot[data-state="initialized"] { background: #51aa8f; box-shadow: 0 0 0 3px #e4f4ee; }
+.performance-status-dot[data-state="failed"], .performance-status-dot[data-state="unsupported"] { background: #c76b67; box-shadow: 0 0 0 3px #fbebea; }
+.performance-status-dot[data-state="partial"], .performance-status-dot[data-state="compatible"] { background: #d39a48; box-shadow: 0 0 0 3px #fbf3e5; }
+.performance-panel-toggle { display: inline-grid; width: 48px; height: 48px; place-items: center; border: 1px solid #dfe5ed; border-radius: 12px; background: #fff; color: #445169; cursor: pointer; box-shadow: 0 2px 5px rgba(28,41,64,.04); transition: background .16s ease, border-color .16s ease, transform .16s ease; }
+.performance-panel-toggle:hover { border-color: #bfcbd9; background: #f8fafc; }
+.performance-panel-toggle:active { transform: scale(.96); }
+.performance-panel-toggle svg { width: 25px; height: 25px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform .18s ease; }
+.performance-panel-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+.performance-panel-content { padding: 0 20px 18px; border-top: 1px solid #edf0f4; }
+.performance-panel-content[hidden] { display: none; }
+.performance-controlbar { display: flex; flex-wrap: wrap; align-items: end; gap: 9px; padding: 15px 0 12px; }
+.performance-control { display: flex; min-width: 165px; flex: 1 1 165px; flex-direction: column; gap: 5px; }
+.performance-control > span { color: #8792a3; font-size: 8px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+.performance-control select { width: 100%; min-height: 34px; padding: 0 27px 0 9px; border: 1px solid #e0e6ee; border-radius: 7px; background: #fff; color: #455168; font-size: 9px; }
+.performance-control select:disabled { opacity: .58; }
+.performance-run-button, .performance-diagnostics-button { min-height: 34px; }
+.performance-technology-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
+.performance-technology { min-width: 0; padding: 12px; border: 1px solid #e5e9ef; border-radius: 10px; background: #fff; }
+.performance-technology[data-state="active"], .performance-technology[data-state="processing-frames"] { border-color: #bde2d6; background: #fcfffd; }
+.performance-technology[data-state="failed"] { border-color: #efd2d0; }
+.performance-technology-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.performance-technology-heading h3 { min-width: 0; margin: 0; color: #354158; font: 700 11px/1.3 'Manrope Variable', sans-serif; }
+.performance-state-chip { flex: 0 0 auto; max-width: 138px; padding: 4px 6px; border-radius: 5px; background: #eef1f5; color: #778398; font-size: 6px; font-weight: 800; letter-spacing: .06em; text-align: center; }
+.performance-state-chip[data-state="unsupported"], .performance-state-chip[data-state="failed"] { background: #fff0ef; color: #ad514d; }
+.performance-state-chip[data-state="compatible"], .performance-state-chip[data-state="initialized"], .performance-state-chip[data-state="active"], .performance-state-chip[data-state="processing-frames"] { background: #eaf7f2; color: #287e6b; }
+.performance-state-chip[data-state="detected"] { background: #eef3fb; color: #536987; }
+.performance-technology > p { min-height: 36px; margin: 8px 0 10px; color: #7d899c; font-size: 9px; line-height: 1.5; }
+.performance-technology dl { display: grid; gap: 5px; margin: 0; }
+.performance-technology dl > div { display: grid; grid-template-columns: minmax(92px, .72fr) minmax(0, 1fr); gap: 8px; align-items: baseline; }
+.performance-technology dt { color: #a0a8b5; font-size: 8px; }
+.performance-technology dd { min-width: 0; margin: 0; overflow-wrap: anywhere; color: #5c687c; font-size: 8px; line-height: 1.35; }
+.performance-telemetry-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-top: 9px; }
+.performance-telemetry-card { display: flex; min-width: 0; flex-direction: column; gap: 5px; padding: 10px 11px; border: 1px solid #e8ecf1; border-radius: 9px; background: #f9fafc; }
+.performance-telemetry-card strong { color: #657186; font-size: 8px; font-weight: 800; letter-spacing: .04em; }
+.performance-telemetry-card span { overflow-wrap: anywhere; color: #4c586d; font-size: 9px; line-height: 1.4; }
+.performance-telemetry-card small { color: #97a0ae; font-size: 8px; line-height: 1.4; }
+.performance-error { margin: 10px 0 0; padding: 9px 11px; border: 1px solid #f0d3d1; border-radius: 8px; background: #fff7f6; color: #9c4d49; font-size: 9px; line-height: 1.45; }
+.performance-error[hidden] { display: none; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+@media (max-width: 900px) {
+  .performance-panel-header { grid-template-columns: minmax(0, 1fr) 48px; gap: 12px; padding: 14px; }
+  .performance-compact-status { grid-column: 1 / 2; grid-row: 2; }
+  .performance-panel-toggle { grid-column: 2; grid-row: 1 / 3; }
+  .performance-technology-grid { grid-template-columns: 1fr; }
+  .performance-technology > p { min-height: 0; }
+  .performance-telemetry-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 560px) {
+  .performance-panel { margin-bottom: 13px; border-radius: 11px; }
+  .performance-panel-header { min-height: 94px; padding: 12px; gap: 9px; }
+  .performance-panel-title .section-kicker { font-size: 7px; }
+  .performance-panel-title h1 { font-size: 21px; }
+  .performance-panel-title > p { max-width: 250px; font-size: 8px; }
+  .performance-panel-toggle { width: 43px; height: 43px; }
+  .performance-compact-status { padding: 8px 10px; }
+  .performance-panel-content { padding: 0 12px 13px; }
+  .performance-controlbar { align-items: stretch; }
+  .performance-control { flex-basis: 100%; }
+  .performance-run-button, .performance-diagnostics-button { flex: 1 1 auto; }
+}

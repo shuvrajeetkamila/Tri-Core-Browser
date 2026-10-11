@@ -70,15 +70,53 @@
       </header>
 
       <main id="top" class="main-content">
-        <section class="intro-row" aria-labelledby="page-title">
-          <div class="intro-copy">
-            <div class="section-kicker"><span></span>THINK IN PARALLEL</div>
-            <h1 id="page-title">One question.<br class="mobile-break" /> <span>Three perspectives.</span></h1>
-            <p>Browse, compare, and cross-check without jumping between tabs.</p>
+        <section class="performance-panel is-collapsed" id="performance-panel" aria-labelledby="page-title">
+          <div class="performance-panel-header">
+            <div class="performance-panel-title">
+              <div class="section-kicker"><span></span>TRI-CORE GAMING PERFORMANCE</div>
+              <h1 id="page-title">Gaming performance <span>status.</span></h1>
+              <p>Verified rendering paths only. WebAssembly is not an image upscaler.</p>
+            </div>
+            <div class="performance-compact-status" id="performance-compact-status" role="status" aria-live="polite">
+              <span class="performance-status-dot" id="performance-status-dot" aria-hidden="true"></span>
+              <span><strong id="performance-summary-mode">Checking runtime…</strong><small id="performance-summary-detail">No upscaler is claimed active.</small></span>
+            </div>
+            <button class="performance-panel-toggle" id="performance-panel-toggle" type="button" aria-expanded="false" aria-controls="performance-panel-content" aria-label="Expand performance panel" title="Expand performance panel">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+              <span class="sr-only">Expand performance panel</span>
+            </button>
           </div>
-          <div class="intro-status">
-            <span class="status-orbit" aria-hidden="true"><i></i><i></i><i></i></span>
-            <div><strong>3 independent cores</strong><small>Separate pages. One focused workspace.</small></div>
+          <div class="performance-panel-content" id="performance-panel-content" hidden>
+            <div class="performance-controlbar">
+              <label class="performance-control"><span>Selection policy</span><select id="graphics-selection"><option value="auto">Automatic</option><option value="manual">Manual override</option></select></label>
+              <label class="performance-control"><span>Automatic priority</span><select id="graphics-priority"><option value="dlss-first">DLSS → FSR → WASM</option><option value="fsr-first">FSR → DLSS → WASM</option></select></label>
+              <label class="performance-control"><span>Requested mode</span><select id="graphics-mode-select"><option value="wasm">WASM runtime · no upscaling</option><option value="dlss">NVIDIA DLSS</option><option value="fsr">AMD FSR 1</option><option value="hybrid">Hybrid policy</option><option value="standard">Standard Chromium</option></select></label>
+              <button class="secondary-button performance-run-button" type="button" id="performance-wasm-run">Run WASM test</button>
+              <button class="secondary-button performance-diagnostics-button" type="button" id="performance-diagnostics">Diagnostics</button>
+            </div>
+            <div class="performance-technology-grid" aria-label="Graphics technology capability states">
+              <article class="performance-technology" data-technology="dlss">
+                <div class="performance-technology-heading"><h3>NVIDIA DLSS</h3><span class="performance-state-chip" id="performance-dlss-state">UNSUPPORTED</span></div>
+                <p id="performance-dlss-detail">No Streamline/DLSS frame-processing integration is present.</p>
+                <dl><div><dt>GPU detection</dt><dd id="performance-dlss-hardware">Not checked</dd></div><div><dt>Compatibility</dt><dd id="performance-dlss-compatibility">Not tested</dd></div><div><dt>Runtime / frames</dt><dd id="performance-dlss-runtime">Not initialized · no frames</dd></div></dl>
+              </article>
+              <article class="performance-technology" data-technology="fsr">
+                <div class="performance-technology-heading"><h3>AMD FidelityFX FSR</h3><span class="performance-state-chip" id="performance-fsr-state">UNSUPPORTED</span></div>
+                <p id="performance-fsr-detail">No FSR pass or browser-frame bridge is present.</p>
+                <dl><div><dt>GPU detection</dt><dd id="performance-fsr-hardware">Not checked</dd></div><div><dt>Compatibility</dt><dd id="performance-fsr-compatibility">Not tested</dd></div><div><dt>Runtime / frames</dt><dd id="performance-fsr-runtime">Not initialized · no frames</dd></div></dl>
+              </article>
+              <article class="performance-technology" data-technology="wasm">
+                <div class="performance-technology-heading"><h3>Chromium WebAssembly</h3><span class="performance-state-chip" id="performance-wasm-state">CHECKING</span></div>
+                <p id="performance-wasm-detail">Runtime capability is probed independently from GPU upscaling.</p>
+                <dl><div><dt>Runtime</dt><dd id="performance-wasm-runtime">Checking</dd></div><div><dt>Upscaling</dt><dd>None · WASM is not an image upscaler</dd></div><div><dt>Last diagnostic</dt><dd id="performance-wasm-result">Not run</dd></div></dl>
+              </article>
+            </div>
+            <div class="performance-telemetry-grid">
+              <div class="performance-telemetry-card"><strong>Detected graphics device</strong><span id="performance-gpu-name">Not queried</span><small id="performance-gpu-driver">Driver information not queried</small></div>
+              <div class="performance-telemetry-card"><strong>Graphics APIs reported by Chromium</strong><span id="performance-api-summary">WebGPU / WebGL not queried</span><small id="performance-native-api-summary">Native D3D12/Vulkan runtime not integrated or probed</small></div>
+              <div class="performance-telemetry-card"><strong>Upscaler frame processing</strong><span id="performance-frame-summary">No native upscaler active</span><small id="performance-gpu-time-summary">GPU timings unavailable · no upscaler frames processed</small></div>
+            </div>
+            <p class="performance-error" id="performance-error" role="alert" hidden></p>
           </div>
         </section>
 

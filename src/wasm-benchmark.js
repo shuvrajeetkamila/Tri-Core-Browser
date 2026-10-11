@@ -15,6 +15,34 @@ const DEFAULT_ITERATIONS = 500_000;
 const MAX_ITERATIONS = 20_000_000;
 
 /**
+ * Perform a short real WebAssembly compile/instantiate/execute probe without
+ * running the longer throughput benchmark. This proves runtime availability,
+ * not GPU use or page-upscaling capability.
+ */
+export async function probeWasmCapability() {
+  const detected = typeof WebAssembly === 'object' && typeof WebAssembly.compile === 'function';
+  if (!detected) {
+    return Object.freeze({ detected: false, compatible: false, initialized: false, failed: false, error: '' });
+  }
+
+  try {
+    const module = await WebAssembly.compile(ADD_I32_MODULE);
+    const instance = await WebAssembly.instantiate(module);
+    const answer = instance.exports.add(19, 23);
+    if (answer !== 42) throw new Error(`WASM result mismatch: expected 42, received ${answer}`);
+    return Object.freeze({ detected: true, compatible: true, initialized: true, failed: false, answer });
+  } catch (error) {
+    return Object.freeze({
+      detected: true,
+      compatible: false,
+      initialized: false,
+      failed: true,
+      error: error?.message || 'WebAssembly capability probe failed.',
+    });
+  }
+}
+
+/**
  * Compile and run a small, real WebAssembly module in the current V8 runtime.
  * This is a CPU/runtime diagnostic only; it does not alter website rendering.
  */
