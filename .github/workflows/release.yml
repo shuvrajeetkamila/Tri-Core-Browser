@@ -45,8 +45,8 @@ jobs:
         run: node scripts/dependency-audit.cjs
       - name: Build Windows x64 portable executable
         run: npm run package:win
-      - name: Verify executable and run packaged-app smoke test
-        id: packaged_smoke
+      - name: Validate packaged Windows executable
+        id: packaged_executable
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -54,6 +54,15 @@ jobs:
           if (-not (Test-Path $exe -PathType Leaf)) { throw 'TriCoreBrowser.exe was not produced.' }
           $exeItem = Get-Item $exe
           if ($exeItem.Length -lt 30000000) { throw "Executable is unexpectedly small ($($exeItem.Length) bytes); refusing to upload a placeholder." }
+          Write-Host "PASS: TriCoreBrowser.exe exists and is $($exeItem.Length) bytes."
+      - name: Run packaged-app smoke test
+        id: packaged_smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Join-Path $PWD 'release/TriCoreBrowser.exe'
+          if (-not (Test-Path $exe -PathType Leaf)) { throw 'TriCoreBrowser.exe disappeared before smoke-test launch.' }
+          $exeItem = Get-Item $exe
           $stdout = Join-Path $env:RUNNER_TEMP 'tricore-smoke.stdout.txt'
           $stderr = Join-Path $env:RUNNER_TEMP 'tricore-smoke.stderr.txt'
           $fsrSmokeOut = Join-Path $env:RUNNER_TEMP 'tricore-fsr-browser-frame-smoke'
@@ -99,7 +108,7 @@ jobs:
           Add-Content -Path $env:GITHUB_ENV -Value "TRICORE_FSR_SMOKE_OUT=$fsrSmokeOut" -Encoding utf8
           Write-Host "PASS: $($exeItem.Length) byte Windows x64 portable executable; 3 distinct changing WebContentsView capturePage PNG frames at 3 resolutions processed by the FSR1 D3D12 helper on WARP; physical-GPU validation remains NOT RUN."
       - name: Surface packaged smoke diagnostics
-        if: failure() && steps.packaged_smoke.outcome == 'failure'
+        if: failure() && (steps.packaged_executable.outcome == 'failure' || steps.packaged_smoke.outcome == 'failure')
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
