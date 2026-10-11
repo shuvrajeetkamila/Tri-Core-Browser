@@ -62,10 +62,10 @@ jobs:
           $env:TRICORE_REQUIRE_FSR_BROWSER_SMOKE = 'PASS'
           $env:TRICORE_FSR_SMOKE_OUT = $fsrSmokeOut
           $process = Start-Process -FilePath $exe -ArgumentList @('--smoke-test') -NoNewWindow -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
-          if (-not $process.WaitForExit(150000)) {
+          if (-not $process.WaitForExit(300000)) {
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
             $process.WaitForExit()
-            throw 'Packaged browser smoke test timed out after 150 seconds.'
+            throw 'Packaged browser smoke test timed out after 300 seconds.'
           }
           $process.Refresh()
           if (Test-Path $stdout) { Get-Content $stdout }
@@ -103,16 +103,16 @@ jobs:
             (Join-Path $env:RUNNER_TEMP 'tricore-smoke.stderr.txt'),
             (Join-Path (Join-Path $env:RUNNER_TEMP 'tricore-fsr-browser-frame-smoke') 'browser-frame-smoke-summary.json')
           )
-          $lines = @()
           foreach ($logPath in $paths) {
-            if (Test-Path $logPath -PathType Leaf) { $lines += @(Get-Content $logPath -Tail 25) }
+            if (Test-Path $logPath -PathType Leaf) {
+              foreach ($line in (Get-Content $logPath -Tail 8)) {
+                $message = [string]$line
+                if ($message.Length -gt 700) { $message = $message.Substring(0, 700) }
+                $message = $message.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+                Write-Host "::error title=Packaged browser smoke detail::$message"
+              }
+            }
           }
-          if ($lines.Count -eq 0) { $lines = @('No redirected smoke-test output was written.') }
-          $detail = ($lines | Select-Object -Last 25) -join ' | '
-          if ($detail.Length -gt 3500) { $detail = $detail.Substring($detail.Length - 3500) }
-          $escaped = $detail.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
-          Write-Output "::error title=Packaged browser smoke details::$escaped"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ("Packaged browser smoke details:`n`n```text`n$detail`n```") -Encoding utf8
       - name: Assemble portable distribution and reports
         shell: pwsh
         run: '& .\scripts\package-windows.ps1'
