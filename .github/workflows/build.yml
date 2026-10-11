@@ -118,23 +118,21 @@ jobs:
           Write-Host "PASS: $($exeItem.Length) byte Windows x64 portable executable; 3 distinct changing WebContentsView capturePage PNG frames at 3 resolutions processed by the FSR1 D3D12 helper on WARP; physical-GPU validation remains NOT RUN."
       - name: Surface packaged smoke diagnostics
         if: failure() && steps.packaged_smoke.outcome == 'failure'
-        shell: pwsh
+        shell: bash
         run: |
-          $paths = @(
-            (Join-Path $env:RUNNER_TEMP 'tricore-smoke.stdout.txt'),
-            (Join-Path $env:RUNNER_TEMP 'tricore-smoke.stderr.txt'),
-            (Join-Path (Join-Path $env:RUNNER_TEMP 'tricore-fsr-browser-frame-smoke') 'browser-frame-smoke-summary.json')
-          )
-          foreach ($logPath in $paths) {
-            if (Test-Path $logPath -PathType Leaf) {
-              foreach ($line in (Get-Content $logPath -Tail 8)) {
-                $message = [string]$line
-                if ($message.Length -gt 700) { $message = $message.Substring(0, 700) }
-                $message = $message.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
-                Write-Host "::error title=Packaged browser smoke detail::$message"
-              }
-            }
-          }
+          runner_temp=$(cygpath -u "$RUNNER_TEMP")
+          for log_path in \
+            "$runner_temp/tricore-smoke.stdout.txt" \
+            "$runner_temp/tricore-smoke.stderr.txt" \
+            "$runner_temp/tricore-fsr-browser-frame-smoke/browser-frame-smoke-summary.json"; do
+            [ -f "$log_path" ] || continue
+            while IFS= read -r line; do
+              line=${line//'%'/'%25'}
+              line=${line//$'\r'/'%0D'}
+              line=${line:0:700}
+              printf '::error title=Packaged browser smoke detail::%s\n' "$line"
+            done < <(tail -n 8 "$log_path")
+          done
       - name: Assemble portable distribution and reports
         shell: pwsh
         run: '& .\scripts\package-windows.ps1'
