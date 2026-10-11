@@ -2,7 +2,7 @@
 
 A standalone Windows desktop browser built on Electron's bundled Chromium runtime. Three independent browser cores let you compare pages side by side; each core supports its own tabs, navigation history, bookmarks, downloads, and profile storage.
 
-> **Honest graphics status (CI for app-source commit `59018a6`, 2026-10-11):** Chromium WebAssembly is exercised by a real, repeatable diagnostic. The Windows native D3D12 helper built and processed its synthetic regression input through AMD FSR 1.0.2 on WARP (software), but the packaged-app executable-check/smoke step failed. No successful browser-rendered `capturePage()` → FSR → preview evidence or current portable package is accepted; the exact failing subcheck is unknown. The implemented browser experiment is bounded screenshot/readback, not zero-copy, real-time, or general-page upscaling. Physical-GPU validation is not run. DLSS remains unavailable, ordinary pages keep standard Chromium rendering, and no performance gain is claimed.
+> **Honest graphics status (CI for app-source commit `b7e844f`, 2026-10-11):** Chromium WebAssembly is exercised by a real, repeatable diagnostic. The Windows native D3D12 helper built and processed its synthetic regression input through AMD FSR 1.0.2 on WARP (software), the packaged executable presence/size check passed, but the separate packaged-app smoke step failed. No successful browser-rendered `capturePage()` → FSR → preview evidence or current portable package is accepted; the exact internal smoke error is unknown. The implemented browser experiment is bounded screenshot/readback, not zero-copy, real-time, or general-page upscaling. Physical-GPU validation is not run. DLSS remains unavailable, ordinary pages keep standard Chromium rendering, and no performance gain is claimed.
 
 ## What works today
 
@@ -18,7 +18,7 @@ A standalone Windows desktop browser built on Electron's bundled Chromium runtim
 
 ## Windows download and launch
 
-**Release status:** the existing prereleases predate the current graphics diagnostic and do not validate app-source commit `59018a6`. The current Windows executable/smoke gate failed, so no portable artifact for this source was published. A current release is blocked until the packaged browser-frame smoke passes.
+**Release status:** the existing prereleases predate the current graphics diagnostic and do not validate app-source commit `b7e844f`. The Windows executable presence/size check passed but the packaged-app smoke failed, so no portable artifact for this source was published. A current release is blocked until the packaged browser-frame smoke passes.
 
 1. Open the [GitHub Releases page](https://github.com/shuvrajeetkamila/Tri-Core-Browser/releases) and download `TriCoreBrowser.exe` or the `TriCoreBrowser-Windows-x64-portable.zip` package from a tested release.
 2. If you downloaded the ZIP, extract it first.

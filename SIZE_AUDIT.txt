@@ -1,9 +1,9 @@
 TRI-CORE BROWSER — SIZE AUDIT STATUS
 
 Report date (UTC): 2026-10-11
-App-source commit with Windows CI evidence: 59018a6f21852761db2677d3d1fee58f5864834e
+App-source commit with Windows CI evidence: b7e844fca45cd64c494d9862b3e19e153c283ed7
 
-Windows x64 executable: the Windows `npm run package:win` command completed in CI, but the subsequent combined executable-check/packaged-smoke step failed. No executable artifact or exact byte count was published; the smoke subcheck and size are not confirmed here.
+Windows x64 executable: current CI confirmed that `release/TriCoreBrowser.exe` exists and exceeds the 30,000,000-byte minimum. The exact byte count and downloadable file are unavailable because the later packaged-app smoke failed and package upload was skipped.
 Portable Windows package: not assembled or uploaded because the packaged-app smoke gate failed; size not measured.
 Installer: not built; size not measured.
 

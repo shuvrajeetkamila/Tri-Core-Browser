@@ -3,7 +3,7 @@ TRI-CORE BROWSER — CHECKED-IN BUILD STATUS
 Report date (UTC): 2026-10-11
 Repository: https://github.com/shuvrajeetkamila/Tri-Core-Browser
 Source branch: arena/66abfdc9-tri-core-browser
-App-source commit with Windows CI evidence: 59018a6f21852761db2677d3d1fee58f5864834e
+App-source commit with Windows CI evidence: b7e844fca45cd64c494d9862b3e19e153c283ed7
 
 Local build host: Linux x86_64 (Arena workspace)
 Node.js: 22.22.3
@@ -14,10 +14,12 @@ Renderer build: PASS (`npm run build`)
 Automated unit tests: PASS (36/36)
 Full locked dependency audit: PASS at the high/critical threshold (8 moderate findings; 0 high or critical on 2026-10-11).
 
-Windows native D3D12 helper CMake/MSVC build: PASS in [Windows WARP workflow run 38144964911](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38144964911).
+Windows native D3D12 helper CMake/MSVC build: PASS in [Windows WARP workflow run 38146013763](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38146013763).
 Native synthetic-input AMD FSR1 EASU/RCAS processing: PASS on D3D12 WARP software in that run; this is component regression coverage only, not physical GPU or browser-frame evidence.
-Windows `npm run package:win`: command completed, but the subsequent combined executable-check/packaged-smoke step failed in [run 38144964898](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38144964898). The exact failing subcheck is unknown. Portable distribution assembly/upload was skipped, so no tested Windows executable or ZIP was published for this source.
-Packaged browser-frame FSR path: NOT VERIFIED. The smoke diagnostics artifact was uploaded, but its signed download could not be retrieved from this environment; no passing browser-PNG → FSR → preview evidence is accepted.
+Linux renderer, tests, and dependency checks: PASS in [run 38146013775](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38146013775).
+Packaged Windows executable validation: PASS; the workflow confirmed the executable exists and exceeds 30,000,000 bytes. Exact file size is not available here.
+Packaged-app smoke: FAIL (PowerShell step exit code 1) in [run 38146013775](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38146013775). The exact internal smoke error remains unknown because raw log/artifact downloads failed in this environment. Portable distribution assembly/upload was skipped, so no tested Windows ZIP/executable was published for this source.
+Packaged browser-frame FSR path: NOT VERIFIED. The smoke diagnostics artifact was uploaded (596 bytes), but its signed download could not be retrieved; no passing browser-PNG → FSR → preview evidence is accepted.
 Physical GPU / AMD-vendor hardware validation: NOT RUN. WARP is software.
 
 This file is a checked-in source/status summary, not a Windows build artifact. The current per-build report, executable path/size, captures, and per-frame reports can only be generated and distributed after the packaged smoke gate passes. See docs/TEST_RESULTS.md and docs/BUILD_WINDOWS.md.
