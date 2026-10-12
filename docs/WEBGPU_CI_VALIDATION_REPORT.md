@@ -4,7 +4,11 @@
 
 The packaged Windows smoke path now separates ordinary packaged-app verification from WebGPU/FSR1 GPU evidence. A hosted Windows runner uses an **optional** GPU policy: safe no-adapter detection is reported as `SKIPPED`, never as a GPU `PASS`, and a successful hosted smoke is explicitly **not release-eligible**. A separate opt-in Level B job and the prerelease build require a configured self-hosted Windows runner labelled `self-hosted`, `windows`, `x64`, and `gpu`. Level B fails unless compute, bundled FSR1 output, physical-adapter identity, an active Chromium GPU device, and a non-empty driver version are all verified.
 
-The hardened source was pushed as commit `499e44e8fefc8650ca6b438299d16d4092c52e76`. Post-change workflow run [38265255323](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38265255323) passed both Linux checks and the hosted Windows Level A build/package smoke; the packaged-smoke validator and diagnostics upload succeeded, while portable distribution assembly was skipped. Its diagnostic executable is explicitly unverified. The separate Level B job was skipped because this was a push, not an opt-in `workflow_dispatch`. The exact optional WebGPU compute/FSR status was not retrieved: this sandbox could not fetch GitHub Actions log/artifact content from its result-storage host. Thus this run is not cited as proof of a WebGPU compute PASS or live FSR PASS. A separate post-change D3D12/WARP harness run [38265255364](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38265255364) passed; it is software-only. No physical GPU, physical driver, Level B, or release result is claimed. The Actions runner inventory could not be read (runner API returned HTTP 403), so the required self-hosted GPU runner's presence/configuration remains unverified.
+The implementation commit `499e44e8fefc8650ca6b438299d16d4092c52e76` passed hosted Windows Level A and Linux checks in [run 38265255323](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38265255323). The same code passed those checks again in [run 38266911828](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38266911828) at `c4df55dadd06c35a7f636e4f19e3c7fbe0cc66ab` (documentation-only follow-up). Both runs show the packaged smoke/validator and diagnostic-artifact upload succeeded; the unverified-candidate upload succeeded; portable-package assembly/upload and Level B were skipped. Artifact metadata confirms `TriCoreBrowser-Windows-x64-unverified-smoke-candidate` and `TriCoreBrowser-Packaged-Smoke-Diagnostics` were uploaded. The candidate is correctly named unverified, not a validated portable release.
+
+I retried `gh run download` for the diagnostic artifacts and `gh run view --log` for both Windows jobs. Artifact downloads failed with `EOF` from GitHub's `productionresultssa*.blob.core.windows.net` result-storage host; log retrieval failed with `EOF` from `results-receiver.actions.githubusercontent.com`. The accessible run/job metadata proves the Level A smoke step and shared validator succeeded, which constrains the optional aggregate WebGPU status to `PASS` or `SKIPPED`; it does **not** reveal which one. Do not infer the actual WebGPU status, EASU/RCAS dispatches, output dimensions, or output pixels from a green job. The Level B job was skipped because both runs were push events, not because a runner was proven absent. A separate D3D12/WARP harness run [38265255364](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38265255364) passed its WARP-only EASU+RCAS step; this is software evidence, not the packaged WebGPU scene or physical-GPU validation.
+
+A fresh `gh api repos/shuvrajeetkamila/Tri-Core-Browser/actions/runners` request returned HTTP 403 (`Resource not accessible by integration`). Therefore configured self-hosted runner availability is **UNKNOWN**, not confirmed absent or present. No physical GPU/driver result or live packaged WebGPU FSR1 PASS is claimed.
 
 ## Investigation of the observed failure
 
@@ -14,7 +18,7 @@ The full failure annotation (check `114789255916`) confirms the cause. The hoste
 
 The implementation now validates adapter-request evidence before allowing an optional Level A skip. API/device request errors, a rejected adapter request, selected-adapter initialization/runtime failures, shader/pipeline/resource failures, incomplete dispatch, and missing/invalid output evidence remain failures.
 
-The post-change Level A run `38265255323` passed the packaged Windows smoke and the shared validator. The exact WebGPU outcome (`PASS` versus a valid optional `SKIPPED`) could not be read from the Actions artifact/log in this sandbox; do not infer either. Level B did not run.
+Post-change Level A runs `38265255323` and `38266911828` both passed the packaged Windows smoke and shared validator. Because the validator rejects aggregate `UNSUPPORTED`, `FAIL`, and `NOT RUN` under the optional policy, the successful step constrains `webGpuAcceptance.status` to `PASS` or `SKIPPED`; the inaccessible report/log prevents determining which. If it was `PASS`, that would establish the bundled scene's runtime evidence on that hosted adapter only, not physical-GPU validation. If it was `SKIPPED`, no WebGPU FSR processing occurred. Neither branch can be selected without the missing artifact/log.
 
 ## Status model
 
@@ -29,6 +33,23 @@ The implementation and JSON reports keep these states distinct:
 
 A skip does not make the GPU acceptance status pass. The enclosing Level A packaged smoke may pass its **GPU-independent** gates while carrying `webGpuAcceptance.status = SKIPPED`, `physicalGpuValidation = NOT RUN`, and `releaseEligible = false`.
 
+## Per-stage evidence and status separation
+
+The packaged reports keep the following gates distinct; a compute-probe pass is not an FSR pass, and a packaged-app pass is not a physical-GPU pass.
+
+| Gate | Report/evidence fields | What they establish |
+|---|---|---|
+| Packaged application execution | `packaged-smoke-summary.json` `checks.*`, smoke process/validator step | Electron/browser startup and GPU-independent app checks. Both post-change hosted Level A smoke steps succeeded. |
+| WebGPU API and adapter discovery | `webgpu-compute-smoke-summary.json` `apiDetected`, `adapterRequestResults`, `failureStage`; `fsr1-webgpu-summary.json` `adapterRequestResults`, `adapterDetected`, `failureStage` | API exposure and individual safe adapter-request outcomes. The old pre-hardening annotation confirms four FSR adapter requests unavailable; post-hardening per-request evidence is inaccessible. |
+| Device initialization | Compute report `deviceRequested`, shader/pipeline/resource statuses; FSR report `lifecycle.state`, `adapterDetected`, shader/pipeline/resource initialization, and failure stage such as `device-request` | A compute probe device is separate from the FSR scene's device. A successful compute probe alone cannot prove the FSR device or pipelines initialized. |
+| Shader compilation | `lifecycle.shaderCompilationStatus` and the compute probe's shader status | Compilation only; not dispatch or output. |
+| EASU and RCAS execution | `dispatch.easuDispatches` and `dispatch.rcasDispatches`, plus completed-frame count and queue-completion evidence | Separate counts for EASU and RCAS work submitted and completed as part of frames. A nonzero count alone is not output correctness. |
+| Output generation/presentation | `input`, `intermediate`, and `output` dimensions; `lifecycle.outputSubmittedToVisibleCanvas`, `framesPresented`, visible capture | Output dimensions and submission to the canvas. A PNG's validity alone does not prove it came from both FSR passes. |
+| Output correctness | `imageValidation.stageComparison` (`easuContributes`, `rcasContributes`, detail and dimensions checks), `imageValidation.visibleCanvas`, motion fingerprints, saved captures/hashes | Post-processing GPU texture readback analysis plus visible-canvas comparison. This is a sanity/reference comparison, not bit-exact AMD shader conformance or a quality/performance claim. Readback is validation-only. |
+| Physical-GPU confirmation | aggregate `webGpuAcceptance.physicalGpuValidation`, adapter/software classification, active Chromium GPU device and driver evidence | Must be `PASS` under required Level B after both compute and FSR evidence. Optional Level A is always `NOT RUN` for physical validation. |
+
+For the two post-change hosted runs, the packaged application/smoke validator passed, but missing diagnostic JSON/logs prevent determining any individual WebGPU stage. The successful optional validator means the aggregate was either `PASS` (which would require actual compute and FSR output acceptance on the hosted adapter) or `SKIPPED` (no compatible adapter and no FSR processing). We cannot distinguish those branches. The earlier pre-hardening run is definitively `UNSUPPORTED` at adapter discovery and reached no FSR shader, EASU/RCAS dispatch, or FSR output. The native WARP harness is a different path. No post-change WebGPU dimensions, output pixels, stage metrics, adapter identity, or FSR execution are asserted here.
+
 ## Level A: hosted Windows checks
 
 `.github/workflows/build.yml` runs Level A on `windows-latest` with `TRICORE_GPU_TEST_MODE=optional`. It retains the packaged executable size/existence check and these packaged runtime checks:
@@ -41,7 +62,7 @@ A skip does not make the GPU acceptance status pass. The enclosing Level A packa
 - The existing WebGL2 `WebContentsView` → `capturePage()` PNG → native D3D12 FSR1 helper on **WARP software**, with three changing frames, three capture resolutions, per-frame reports, processed/reference PNGs, and image/report checks.
 - Report generation, smoke logs, executable candidate upload, and always-run diagnostic artifact upload.
 
-Post-change run `38265255323` built/size-validated the Windows executable, passed the packaged smoke/validator, and uploaded the diagnostics; it skipped distribution assembly and the portable package. The exact optional WebGPU status in that run could not be retrieved from the job artifact/log.
+Post-change runs `38265255323` (code commit `499e44e`) and `38266911828` (commit `c4df55d`) built/size-validated the Windows executable, passed the packaged smoke/validator, and uploaded diagnostics; each skipped distribution assembly and the portable package. Artifact metadata reports the diagnostic archive sizes as 734,629 bytes and 736,234 bytes respectively, plus explicitly unverified executable candidates (109,719,020 bytes and 109,711,042 bytes). Those byte counts establish that artifacts exist, not what their reports contain. The exact optional WebGPU status and all WebGPU-specific runtime details remain unavailable because the artifact/log downloads ended in `EOF`. Given the successful Level A validator, the aggregate status was necessarily `PASS` or `SKIPPED`; it cannot be narrowed further.
 
 WebGPU compute/FSR checks may run on a hosted adapter. If all safe adapter requests return unavailable, the reports say `UNSUPPORTED`/`SKIPPED`, record zero dispatches/frames and `NOT RUN` output checks, and the ordinary Level A smoke remains successful only if the independent checks above passed. A WebGPU runtime pass on a software/hosted adapter still leaves physical validation `NOT RUN`. The distribution assembly and portable-package upload steps are gated off on Level A (`TRICORE_FSR_INTEGRATION_SMOKE=SKIPPED`). The diagnostic executable is uploaded under an explicitly unverified name before the runtime gate; that candidate is not a release package.
 
@@ -55,7 +76,14 @@ The `windows-gpu-validation` job in `.github/workflows/build.yml` is opt-in thro
 runs-on: [self-hosted, windows, x64, gpu]
 ```
 
-The repository must have a Windows x64 GitHub Actions self-hosted runner carrying all four labels, with a supported GPU and driver installed. If that runner is absent/offline, an opted-in job will remain queued or fail to start; CI must not fall back to `windows-latest`. Runner registration, labels, host security, driver version, and GPU availability must be managed by the repository owner. The current session could not inspect Actions runner inventory.
+The repository must have a Windows x64 GitHub Actions self-hosted runner carrying all four labels, with a supported GPU and current vendor driver installed. It must run in a logged-in interactive Windows session because the packaged Electron smoke opens a window and captures its visible canvas. The host must keep the normal Chromium/WebGPU security policy enabled; do not set unsafe WebGPU, blocklist-bypass, GPU-disable, or sandbox-disable flags. If a matching runner is absent/offline, an opted-in job remains queued or fails to start; CI must not fall back to `windows-latest`. Runner registration, labels, host security, driver version, and GPU availability are repository-owner responsibilities. The current session's runner inventory request returned HTTP 403 (`Resource not accessible by integration`), so availability is unknown.
+
+#### Exact Level B dispatch procedure
+
+1. A repository owner first confirms the Windows x64 runner is registered and **online** in **Settings → Actions → Runners**, has exactly the required labels `self-hosted`, `windows`, `x64`, and `gpu`, is in an interactive logged-in desktop session, and has its supported GPU vendor driver installed. Do not dispatch while these prerequisites are uncertain.
+2. In GitHub, open **Actions → Test and build Windows browser → Run workflow**. Select the branch containing the workflow (for this session, `arena/66abfdc9-tri-core-browser`) and set `run_physical_gpu_validation` to **true**, then dispatch. The dispatcher needs the repository's normal workflow-run permission.
+3. The hosted Level A and Linux jobs still run independently. Level B is a separate job and can start only on the matching self-hosted labels. A queued job, skipped job, or no matching runner is **not** a pass. Do not register a runner or change labels as part of this code change.
+4. Wait for **Level B required physical-GPU validation** to finish. Inspect the job conclusion and `packaged-smoke-summary.json`, `webgpu-compute-smoke-summary.json`, `fsr1-webgpu-summary.json`, failure report if present, smoke log, and PNG evidence in the `TriCoreBrowser-Level-B-GPU-Diagnostics` artifact (30-day retention). Verify both independent compute and actual EASU+RCAS acceptance, non-software adapter identity, active Chromium device/driver, output dimensions/pixels, and `physicalGpuValidation = PASS`. The separate `TriCoreBrowser-Windows-x64-physical-GPU-validated` artifact is uploaded only after strict acceptance; neither an artifact's existence nor a queued job is itself proof.
 
 Level B sets `TRICORE_GPU_TEST_MODE=required`. It fails unless all of these checks pass:
 
@@ -97,19 +125,31 @@ The shared `scripts/validate-packaged-smoke.cjs` checks the emitted JSON reports
 
 | Check | Current result |
 |---|---|
-| Source investigation | Confirmed in annotation 114789255916: all four WebGPU adapter requests unavailable on a WARP-only hosted runner; failure occurred before shader/dispatch/output |
-| Level A/Level B workflow implementation | Level A passed in run 38265255323; Level B was skipped because this was a push, not an opt-in dispatch |
-| Self-hosted GPU runner availability | Unknown; Actions runner inventory request returned 403 |
-| `npm ci` | PASS (locked dependencies installed; 8 moderate audit findings reported) |
-| `npm test` | PASS — 85 tests, 0 failures (including deterministic policy, path-confinement, and synthetic report-validator tests; mocks only) |
-| `npm run build` | PASS — Vite production renderer build |
-| `npm audit --audit-level=high` | PASS — 8 moderate findings, 0 high/critical findings |
-| Packaged Windows executable after changes | Built and size-validated in run 38265255323; uploaded only as an explicitly unverified diagnostic candidate artifact (109,719,020-byte archive) |
-| Packaged WebGPU compute after changes | Attempted under optional policy; Level A validator passed, but the exact report status/result was not retrievable from Actions artifacts/logs |
-| Live bundled WebGPU FSR1 EASU/RCAS output after changes | Attempted under optional policy; exact `PASS` versus safe `SKIPPED` state and frame/output details not retrievable; no live FSR PASS claimed |
-| Physical GPU / driver / output validation | NOT RUN; Level B was skipped on push; no physical-GPU PASS claimed |
-| WARP PNG processing after changes | Level A packaged validator passed the screenshot→PNG→WARP evidence gate; separate native WARP harness run 38265255364 also passed; both are software-only |
-| Ordinary external websites / games / cloud video | No FSR page interception or arbitrary game support claimed |
-| DLSS | Not implemented; no fallback/substitution claim |
+| Source investigation | Pre-hardening annotation `114789255916` definitively shows all four WebGPU adapter requests unavailable on a WARP-only hosted runner; it failed before FSR shader/dispatch/output. It is not evidence about post-hardening runs. |
+| Post-hardening hosted Level A | Runs `38265255323` (code `499e44e8fefc8650ca6b438299d16d4092c52e76`) and `38266911828` (same code, docs commit `c4df55dadd06c35a7f636e4f19e3c7fbe0cc66ab`) both passed the Windows packaged smoke/shared validator and uploaded diagnostics. Level B and distribution assembly were skipped on push events. |
+| Candidate/diagnostic artifacts | Both runs uploaded `TriCoreBrowser-Windows-x64-unverified-smoke-candidate` and `TriCoreBrowser-Packaged-Smoke-Diagnostics`. Metadata sizes: candidate 109,719,020 / 109,711,042 bytes; diagnostics 734,629 / 736,234 bytes. Names/sizes are not artifact-content evidence. |
+| Artifact and log retrieval | Diagnostic artifact downloads for runs `38265255323` and `38266911828` ended in `EOF` from separate `productionresultssa*.blob.core.windows.net` hosts. Windows job-log retrieval ended in `EOF` from `results-receiver.actions.githubusercontent.com`. Actual per-stage JSON, images, and exact aggregate status remain unread. |
+| Aggregate optional WebGPU status | Bounded by the successful smoke/validator to `PASS` or `SKIPPED`; which one is **UNKNOWN**. `UNSUPPORTED`, `FAIL`, and `NOT RUN` are not valid aggregate outcomes for the successful optional validator. Do not infer one branch. |
+| Post-change packaged compute / EASU / RCAS / output | Actual compute status, EASU and RCAS dispatch counts, dimensions, stage metrics, visible pixels, and output images are **UNKNOWN** because evidence content is inaccessible. No packaged WebGPU FSR pass is claimed. |
+| Self-hosted GPU runner availability | **UNKNOWN**; `gh api repos/shuvrajeetkamila/Tri-Core-Browser/actions/runners` returned HTTP 403 `Resource not accessible by integration`. No runner was registered or dispatched. |
+| Physical GPU / driver / Level B | **NOT RUN**; Level B was skipped on push events. No physical-GPU or driver PASS claimed. |
+| Separate native D3D12/WARP harness | Run `38265255364` passed official EASU/RCAS harness execution on WARP software. It is not packaged WebGPU FSR or physical hardware. |
+| `npm ci` | Not rerun; dependencies were already installed. The preceding milestone's locked install passed. |
+| `npm test` | **PASS — 85/85**, 0 failures/skips. Deterministic mocks and synthetic evidence only; not GPU evidence. |
+| `npm run build` | **PASS** — Vite production renderer build, 11 modules. No Windows executable package was built locally. |
+| Workflow/config validation | **PASS** — parsed `build.yml`, `release.yml`, `fsr1-native-poc.yml`, and `package.json`; the workflow-policy tests also passed within `npm test`. |
+| `npm audit --audit-level=high` | **PASS** — 8 moderate findings, 0 high/critical. No forced dependency update applied. |
+| `git diff --check` | **PASS** — no whitespace errors. |
+| WARP PNG processing | Level A validator succeeded for the WARP diagnostic route in both hosted runs, but ZIP contents are unreadable here; separate WARP harness pass is software-only. |
+| Ordinary external websites / games / cloud video | No FSR page interception or arbitrary game support claimed. |
+| DLSS | Not implemented; no fallback/substitution claim. |
 
-After any actual run, record the exact workflow URL/run ID, commit, runner/GPU/driver identity, report paths and statuses, and whether packaged FSR reached visible output. Do not promote a software/hosted result to physical-GPU evidence or a `SKIPPED` result to `PASS`.
+### Evidence-recovery commands and outcomes (2026-10-12)
+
+- `gh run view --repo shuvrajeetkamila/Tri-Core-Browser --json databaseId,headSha,event,status,conclusion,createdAt,jobs` was used to inspect runs `38265255323` and `38266911828` (along with the separate `gh run view` inspection of `38265255364`). Both Level A runs were completed `success` push events; `Run packaged-app smoke test` and `Upload packaged smoke diagnostics` concluded `success`; portable distribution assembly and Level B concluded `skipped`. Run `38265255364` was the separate native D3D12/WARP harness.
+- `gh api "repos/shuvrajeetkamila/Tri-Core-Browser/actions/runs/$run/artifacts" --jq '.artifacts[] | {name,size_in_bytes,expired,created_at}'` returned the candidate, diagnostics, and Linux-check artifact metadata for both Level A runs. The artifacts were not expired.
+- `gh run download 38265255323 --name TriCoreBrowser-Packaged-Smoke-Diagnostics` and the corresponding command for `38266911828` both failed with `EOF` from distinct GitHub Actions result-storage blob hosts. No downloaded report or PNG was available for inspection.
+- `gh run view --repo shuvrajeetkamila/Tri-Core-Browser --job 114871269505 --log` failed with `EOF` from `results-receiver.actions.githubusercontent.com`; an earlier Windows job-log attempt had the same result.
+- `gh api repos/shuvrajeetkamila/Tri-Core-Browser/actions/runners` returned HTTP 403, `Resource not accessible by integration`. No runner inventory conclusion can be drawn from that response.
+
+These retrieval failures are recorded, not converted into `SKIPPED` or `PASS` evidence. After a future accessible Level B run, record its exact workflow URL/run ID, commit, runner/GPU/driver identity, Electron/Chromium versions, report paths and stage statuses, measured duration, output dimensions/pixel metrics, and whether packaged FSR reached visible output. Do not promote a software/hosted result to physical-GPU evidence or a `SKIPPED` result to `PASS`.
