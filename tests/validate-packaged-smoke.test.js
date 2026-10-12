@@ -34,6 +34,29 @@ function pngChunk(type, data) {
   return chunk;
 }
 
+function rewriteFirstPngIdat(filePath, replacement) {
+  const bytes = fs.readFileSync(filePath);
+  const chunks = [Buffer.from(bytes.subarray(0, 8))];
+  let offset = 8;
+  let replaced = false;
+  while (offset + 12 <= bytes.length) {
+    const length = bytes.readUInt32BE(offset);
+    const dataEnd = offset + 8 + length;
+    const chunkEnd = dataEnd + 4;
+    const type = bytes.toString('ascii', offset + 4, offset + 8);
+    if (type === 'IDAT') {
+      if (!replaced) chunks.push(pngChunk('IDAT', replacement));
+      replaced = true;
+    } else {
+      chunks.push(Buffer.from(bytes.subarray(offset, chunkEnd)));
+    }
+    offset = chunkEnd;
+    if (type === 'IEND') break;
+  }
+  assert.ok(replaced, 'fixture PNG must contain an IDAT chunk');
+  fs.writeFileSync(filePath, Buffer.concat(chunks));
+}
+
 function writeTestPng(root, name, width, height) {
   const header = Buffer.alloc(13);
   header.writeUInt32BE(width, 0);
@@ -112,6 +135,9 @@ function passingFsr(root) {
     processedFrames: 3,
     input: { width: 64, height: 48 }, output: { width: 128, height: 96 },
     timingDefinition: 'queue completion wall time; not a GPU timestamp',
+    lastQueueCompletionWallMs: 3.5,
+    averageQueueCompletionWallMs: 4.1,
+    maxQueueCompletionWallMs: 5.2,
     adapter: { vendor: 'Example GPU Vendor', architecture: 'test', device: 'Example GPU', description: 'physical adapter' },
     adapterInfoAvailable: true, softwareAdapter: false,
     lifecycle: {
@@ -126,8 +152,30 @@ function passingFsr(root) {
         status: 'PASS', checks: {
           dimensionsUpscaled: true, inputHasDetail: true, easuContributes: true, rcasContributes: true, outputHasDetail: true,
         },
+        dimensions: {
+          input: { width: 64, height: 48 },
+          easu: { width: 128, height: 96 },
+          rcas: { width: 128, height: 96 },
+        },
+        numerical: {
+          comparedOutputPixels: 128 * 96,
+          comparedRgbChannels: 128 * 96 * 3,
+          easuVsBilinearMeanAbsoluteErrorNormalized: 0.02,
+          easuChangedPixelsVsBilinear: 8000,
+          easuChangedPixelFraction: 8000 / (128 * 96),
+          rcasVsEasuMeanAbsoluteErrorNormalized: 0.01,
+          rcasChangedPixelsVsEasu: 5000,
+          rcasChangedPixelFraction: 5000 / (128 * 96),
+          inputMeanNeighborDifferenceNormalized: 0.04,
+          rcasMeanNeighborDifferenceNormalized: 0.05,
+          inputDistinctSampledColors: 4,
+          outputDistinctSampledColors: 6,
+        },
       },
-      visibleCanvas: { status: 'PASS' }, captures,
+      visibleCanvas: {
+        status: 'PASS', sampleCount: 16, meanAbsoluteErrorNormalized: 0.02, luminanceCorrelation: 0.97,
+        samplesWithin30PercentMeanError: 14, distinctObservedColors: 8,
+      }, captures,
     },
     visibleOutputCapture: { ...visible, purpose: 'Post-processing evidence only; never used as FSR input.' },
     graphicsEnvironment: { chromiumGpuDevices: physicalDevices() },
@@ -228,6 +276,7 @@ function validateFixture(policy, fixture) {
     if (typeof fixture.mutate === 'function') fixture.mutate({ root, compute, fsr });
     const acceptance = classifyWebGpuSmoke({ policy, computeProbe: compute, fsrReport: fsr });
     const smokeLog = writeCoreReports(root, { policy, compute, fsr, acceptance });
+    if (typeof fixture.mutateReports === 'function') fixture.mutateReports({ root });
     return spawnSync(process.execPath, [validatorPath, '--policy', policy, '--directory', root, '--smoke-log', smokeLog], { encoding: 'utf8' });
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
@@ -266,4 +315,49 @@ test('packaged evidence validator rejects a required no-adapter skip and a fabri
   const optionalNoPhysical = validateFixture('optional', {});
   assert.equal(optionalNoPhysical.status, 0, optionalNoPhysical.stderr);
   assert.match(optionalNoPhysical.stdout, /"physicalGpuValidation":"NOT RUN"/);
+});
+
+test('packaged evidence validator rejects corrupted PNG image data even when chunk CRCs are recomputed', () => {
+  const result = validateFixture('optional', {
+    mutateReports({ root }) {
+      const fsr = JSON.parse(fs.readFileSync(path.join(root, 'fsr1-webgpu-summary.json'), 'utf8'));
+      rewriteFirstPngIdat(fsr.imageValidation.captures.rcasOutput.path, Buffer.from('not a valid zlib stream'));
+    },
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /PNG image data cannot be decompressed/);
+});
+
+test('packaged evidence validator requires finite, consistent queue-completion timing evidence', () => {
+  const result = validateFixture('optional', {
+    mutateReports({ root }) {
+      const fsr = JSON.parse(fs.readFileSync(path.join(root, 'fsr1-webgpu-summary.json'), 'utf8'));
+      fsr.averageQueueCompletionWallMs = fsr.maxQueueCompletionWallMs + 1;
+      writeJson(root, 'fsr1-webgpu-summary.json', fsr);
+    },
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /queue-completion wall-time measurements are missing or inconsistent/);
+});
+
+test('packaged evidence validator rejects unsupported report schema versions and inconsistent stage dimensions', () => {
+  const schemaMismatch = validateFixture('optional', {
+    mutateReports({ root }) {
+      const packaged = JSON.parse(fs.readFileSync(path.join(root, 'packaged-smoke-summary.json'), 'utf8'));
+      packaged.schemaVersion = 77;
+      writeJson(root, 'packaged-smoke-summary.json', packaged);
+    },
+  });
+  assert.notEqual(schemaMismatch.status, 0);
+  assert.match(schemaMismatch.stderr, /Unsupported packaged-smoke-summary\.json schemaVersion/);
+
+  const dimensionMismatch = validateFixture('optional', {
+    mutateReports({ root }) {
+      const fsr = JSON.parse(fs.readFileSync(path.join(root, 'fsr1-webgpu-summary.json'), 'utf8'));
+      fsr.imageValidation.captures.easuIntermediate.width -= 1;
+      writeJson(root, 'fsr1-webgpu-summary.json', fsr);
+    },
+  });
+  assert.notEqual(dimensionMismatch.status, 0);
+  assert.match(dimensionMismatch.stderr, /capture dimensions differ from the FSR input\/output dimensions/);
 });

@@ -78,6 +78,12 @@
   let resourceInitializationStatus = 'pending';
   let easuDispatches = 0;
   let rcasDispatches = 0;
+  let easuDispatchAttempted = false;
+  let rcasDispatchAttempted = false;
+  let easuShaderCompilationStatus = 'NOT RUN';
+  let rcasShaderCompilationStatus = 'NOT RUN';
+  let easuPipelineCreationStatus = 'NOT RUN';
+  let rcasPipelineCreationStatus = 'NOT RUN';
   let visibleOutputVerified = false;
   let evidenceFreezeRequested = false;
   let evidenceFrozen = false;
@@ -450,6 +456,36 @@ fn fsMain(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     }
   }
 
+  async function compileFsrStageShader(code, label, stage) {
+    const setStatus = stage === 'easu'
+      ? (status) => { easuShaderCompilationStatus = status; }
+      : (status) => { rcasShaderCompilationStatus = status; };
+    setStatus('RUNNING');
+    try {
+      const module = await compileShader(code, label);
+      setStatus('PASS');
+      return module;
+    } catch (error) {
+      setStatus('FAIL');
+      throw error;
+    }
+  }
+
+  async function createFsrStagePipeline(label, create, stage) {
+    const setStatus = stage === 'easu'
+      ? (status) => { easuPipelineCreationStatus = status; }
+      : (status) => { rcasPipelineCreationStatus = status; };
+    setStatus('RUNNING');
+    try {
+      const pipeline = await validationError(label, create);
+      setStatus('PASS');
+      return pipeline;
+    } catch (error) {
+      setStatus('FAIL');
+      throw error;
+    }
+  }
+
   async function validationError(label, create, state = 'pipeline-failed', stage = 'pipeline-creation') {
     device.pushErrorScope('validation');
     let value;
@@ -473,8 +509,8 @@ fn fsMain(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     shaderCompilationStatus = 'compiling';
     const vertexModule = await compileShader(FULLSCREEN_VERTEX_WGSL, 'fullscreen vertex');
     const gameModule = await compileShader(GAME_FRAGMENT_WGSL, 'controlled game scene');
-    const easuModule = await compileShader(EASU_COMPUTE_WGSL, 'AMD FSR1 EASU compute');
-    const rcasModule = await compileShader(RCAS_COMPUTE_WGSL, 'AMD FSR1 RCAS compute');
+    const easuModule = await compileFsrStageShader(EASU_COMPUTE_WGSL, 'AMD FSR1 EASU compute', 'easu');
+    const rcasModule = await compileFsrStageShader(RCAS_COMPUTE_WGSL, 'AMD FSR1 RCAS compute', 'rcas');
     const presentationModule = await compileShader(PRESENT_FRAGMENT_WGSL, 'processed output presentation');
     shaderCompilationStatus = 'passed';
     pipelineCreationStatus = 'creating';
@@ -486,16 +522,16 @@ fn fsMain(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
       fragment: { module: gameModule, entryPoint: 'fsMain', targets: [{ format: 'rgba8unorm' }] },
       primitive: { topology: 'triangle-list' },
     }));
-    easuPipeline = await validationError('FSR1 EASU compute pipeline', () => device.createComputePipeline({
+    easuPipeline = await createFsrStagePipeline('FSR1 EASU compute pipeline', () => device.createComputePipeline({
       label: 'AMD FidelityFX FSR1 EASU compute pipeline',
       layout: 'auto',
       compute: { module: easuModule, entryPoint: 'csMain' },
-    }));
-    rcasPipeline = await validationError('FSR1 RCAS compute pipeline', () => device.createComputePipeline({
+    }), 'easu');
+    rcasPipeline = await createFsrStagePipeline('FSR1 RCAS compute pipeline', () => device.createComputePipeline({
       label: 'AMD FidelityFX FSR1 RCAS compute pipeline',
       layout: 'auto',
       compute: { module: rcasModule, entryPoint: 'csMain' },
-    }));
+    }), 'rcas');
     presentationPipeline = await validationError('Visible canvas presentation pipeline', () => device.createRenderPipeline({
       label: 'present processed FSR1 output to visible WebGPU canvas',
       layout: 'auto',
@@ -924,12 +960,14 @@ fn fsMain(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
       const easuPass = beginComputePass(encoder, 'AMD FSR1 EASU compute dispatch', timestampSlot, 0);
       easuPass.setPipeline(easuPipeline);
       easuPass.setBindGroup(0, easuBindGroup);
+      easuDispatchAttempted = true;
       easuPass.dispatchWorkgroups(workgroupsX, workgroupsY, 1);
       easuPass.end();
 
       const rcasPass = beginComputePass(encoder, 'AMD FSR1 RCAS compute dispatch', timestampSlot, 2);
       rcasPass.setPipeline(rcasPipeline);
       rcasPass.setBindGroup(0, rcasBindGroup);
+      rcasDispatchAttempted = true;
       rcasPass.dispatchWorkgroups(workgroupsX, workgroupsY, 1);
       rcasPass.end();
 
@@ -1159,6 +1197,67 @@ fn fsMain(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     return true;
   }
 
+  function getStageResults() {
+    const apiDetected = Boolean(navigator.gpu && typeof navigator.gpu.requestAdapter === 'function');
+    const unavailableOnly = adapterRequestResults.length > 0
+      && adapterRequestResults.every((result) => result.status === 'unavailable');
+    const anyRejected = adapterRequestResults.some((result) => result.status === 'rejected');
+    const adapterDiscoveryStatus = adapterDetected
+      ? 'PASS'
+      : failureStage === 'webgpu-api-detection'
+        ? 'NOT RUN'
+        : failureStage === 'adapter-discovery'
+          ? unavailableOnly ? 'UNSUPPORTED' : anyRejected ? 'FAIL' : 'NOT RUN'
+          : 'NOT RUN';
+    const deviceInitializationStatus = device
+      ? 'PASS'
+      : failureStage === 'device-request' || lifecycle === 'device-failed'
+        ? 'FAIL'
+        : adapterDetected && !isTerminalState() ? 'RUNNING' : 'NOT RUN';
+    const dispatchStage = (completedDispatches, attempted) => ({
+      status: completedDispatches > 0
+        ? 'PASS'
+        : attempted && isTerminalState()
+          ? 'FAIL'
+          : attempted ? 'RUNNING' : 'NOT RUN',
+      acceptanceStatus: completedDispatches >= 3
+        ? 'PASS'
+        : isTerminalState()
+          ? attempted ? 'FAIL' : 'NOT RUN'
+          : 'RUNNING',
+      completedDispatches,
+      minimumRequiredDispatches: 3,
+    });
+    const outputGenerationStatus = framesCompleted >= 3 && ['presented', 'processing'].includes(lifecycle)
+      ? 'PASS'
+      : isTerminalState() && (framesSubmitted > 0 || framesCompleted > 0)
+        ? 'FAIL'
+        : framesSubmitted > 0 || framesCompleted > 0 ? 'RUNNING' : 'NOT RUN';
+    return {
+      apiDetection: { status: apiDetected ? 'PASS' : 'UNSUPPORTED' },
+      adapterDiscovery: {
+        status: adapterDiscoveryStatus,
+        selectedPreference: adapterRequestPath || null,
+        requests: adapterRequestResults,
+      },
+      deviceInitialization: { status: deviceInitializationStatus },
+      easuShaderCompilation: { status: easuShaderCompilationStatus },
+      rcasShaderCompilation: { status: rcasShaderCompilationStatus },
+      easuPipelineCreation: { status: easuPipelineCreationStatus },
+      rcasPipelineCreation: { status: rcasPipelineCreationStatus },
+      easuDispatch: dispatchStage(easuDispatches, easuDispatchAttempted),
+      rcasDispatch: dispatchStage(rcasDispatches, rcasDispatchAttempted),
+      outputGeneration: {
+        status: outputGenerationStatus,
+        framesSubmitted,
+        framesCompleted,
+        input: { width: renderWidth, height: renderHeight },
+        output: { width: outputWidth, height: outputHeight },
+      },
+      outputValidation: { status: 'NOT RUN' },
+    };
+  }
+
   function getSnapshot() {
     const now = performance.now();
     const recentCompletedFrame = lifecycle === 'presented'
@@ -1172,6 +1271,8 @@ fn fsMain(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
       failureStage,
       detected: adapterDetected || Boolean(device),
       adapterDetected,
+      deviceInitialized: Boolean(device),
+      stageResults: getStageResults(),
       compatible: ['initialized', 'processing', 'presented'].includes(lifecycle),
       initialized: ['initialized', 'processing', 'presented'].includes(lifecycle),
       shaderCompilationStatus,

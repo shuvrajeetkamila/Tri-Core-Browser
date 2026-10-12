@@ -6,6 +6,7 @@ const read = (file) => fs.readFileSync(new URL(file, import.meta.url), 'utf8');
 const buildWorkflow = read('../.github/workflows/build.yml');
 const releaseWorkflow = read('../.github/workflows/release.yml');
 const validator = read('../scripts/validate-packaged-smoke.cjs');
+const summaryWriter = read('../scripts/write-smoke-job-summary.cjs');
 const packageScript = read('../scripts/package-windows.ps1');
 
 test('Level A hosted Windows smoke preserves ordinary checks and never gates on optional GPU PASS', () => {
@@ -33,6 +34,26 @@ test('Level B is explicit, opt-in, isolated from ordinary CI, and uses a configu
   assert.ok(levelB.includes('if: success() && env.TRICORE_FSR_INTEGRATION_SMOKE == \'PASS\''));
   assert.ok(levelB.includes('TriCoreBrowser-Level-B-GPU-Diagnostics'));
   assert.ok(levelB.includes('TriCoreBrowser-Windows-x64-physical-GPU-validated'));
+});
+
+test('Level A and Level B always append outcome-aware summaries after artifact handling without erasing prior failures', () => {
+  const summarySteps = buildWorkflow.match(/name: Write (?:packaged smoke evidence|Level B GPU evidence) to job summary/g) || [];
+  assert.equal(summarySteps.length, 2, 'both packaged Windows jobs must write their own evidence summary');
+  assert.equal((buildWorkflow.match(/run: node scripts\/write-smoke-job-summary\.cjs/g) || []).length, 2);
+  assert.equal((buildWorkflow.match(/TRICORE_DISTRIBUTION_BUILD_OUTCOME: \$\{\{ steps\.(?:assemble_portable_distribution|assemble_gpu_distribution)\.outcome \}\}/g) || []).length, 2);
+  assert.equal((buildWorkflow.match(/TRICORE_EVIDENCE_VALIDATION_OUTCOME: \$\{\{ steps\.(?:validate_packaged_smoke_evidence|validate_gpu_smoke_evidence)\.outcome \}\}/g) || []).length, 2);
+  assert.ok(buildWorkflow.includes('id: validate_packaged_smoke_evidence'));
+  assert.ok(buildWorkflow.includes('id: validate_gpu_smoke_evidence'));
+  assert.ok(buildWorkflow.includes('JSON/PNG evidence validation failed'), 'the report validator must be a distinct failure-bearing step');
+  assert.ok(buildWorkflow.includes('TRICORE_CANDIDATE_ARTIFACT_OUTCOME: skipped'), 'Level B must state that no unverified candidate artifact was attempted');
+  assert.ok(summaryWriter.includes('distributionBuildOutcome: normalizeStepOutcome(outcomes.distributionBuild)'));
+  assert.ok(summaryWriter.includes('fs.appendFileSync(summaryPath, markdown'), 'summary writing must append rather than overwrite prior test/package failure details');
+  assert.ok(summaryWriter.includes("if (normalized === 'failure') return { status: 'FAIL'"));
+  assert.ok(summaryWriter.includes('The packaged smoke step succeeded but its packaged-smoke-summary.json is missing or not PASS.'));
+  const summaryStep = buildWorkflow.slice(buildWorkflow.indexOf('name: Write packaged smoke evidence to job summary'));
+  assert.match(summaryStep, /if: always\(\)/);
+  assert.doesNotMatch(summaryStep, /continue-on-error:\s*true/);
+  assert.ok(buildWorkflow.includes('retention-days: 30'), 'smoke diagnostics must remain available for investigation');
 });
 
 test('release workflow can build/publish only after required physical GPU evidence', () => {

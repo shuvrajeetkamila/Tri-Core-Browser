@@ -773,6 +773,19 @@ function createFsrUnavailableSummary(snapshot, policy, computeProbe, graphicsEnv
       visibleOutputVerified: false,
       framesCompleted: 0,
     },
+    stageResults: snapshot?.stageResults || {
+      apiDetection: { status: failureStage === 'webgpu-api-detection' ? 'UNSUPPORTED' : 'PASS' },
+      adapterDiscovery: { status: failureStage === 'adapter-discovery' ? 'UNSUPPORTED' : 'NOT RUN', requests: snapshot?.adapterRequestResults || [] },
+      deviceInitialization: { status: 'NOT RUN' },
+      easuShaderCompilation: { status: 'NOT RUN' },
+      rcasShaderCompilation: { status: 'NOT RUN' },
+      easuPipelineCreation: { status: 'NOT RUN' },
+      rcasPipelineCreation: { status: 'NOT RUN' },
+      easuDispatch: { status: 'NOT RUN', acceptanceStatus: 'NOT RUN', completedDispatches: 0, minimumRequiredDispatches: 3 },
+      rcasDispatch: { status: 'NOT RUN', acceptanceStatus: 'NOT RUN', completedDispatches: 0, minimumRequiredDispatches: 3 },
+      outputGeneration: { status: 'NOT RUN', framesSubmitted: 0, framesCompleted: 0 },
+      outputValidation: { status: 'NOT RUN' },
+    },
     imageValidation: {
       status: notRun,
       readbackFeedsProcessing: false,
@@ -823,6 +836,7 @@ function createFsrNotRunSummary(policy, reason = 'The bundled WebGPU FSR1 scene 
     lifecycle: {
       state: 'not-run',
       adapterDetected: false,
+      deviceInitialized: false,
       shaderCompilationStatus: 'NOT RUN',
       pipelineCreationStatus: 'NOT RUN',
       resourceInitializationStatus: 'NOT RUN',
@@ -833,6 +847,19 @@ function createFsrNotRunSummary(policy, reason = 'The bundled WebGPU FSR1 scene 
       visibleCanvasScreenshotCompared: false,
       visibleOutputVerified: false,
       framesCompleted: 0,
+    },
+    stageResults: {
+      apiDetection: { status: 'NOT RUN' },
+      adapterDiscovery: { status: 'NOT RUN', requests: [] },
+      deviceInitialization: { status: 'NOT RUN' },
+      easuShaderCompilation: { status: 'NOT RUN' },
+      rcasShaderCompilation: { status: 'NOT RUN' },
+      easuPipelineCreation: { status: 'NOT RUN' },
+      rcasPipelineCreation: { status: 'NOT RUN' },
+      easuDispatch: { status: 'NOT RUN', acceptanceStatus: 'NOT RUN', completedDispatches: 0, minimumRequiredDispatches: 3 },
+      rcasDispatch: { status: 'NOT RUN', acceptanceStatus: 'NOT RUN', completedDispatches: 0, minimumRequiredDispatches: 3 },
+      outputGeneration: { status: 'NOT RUN', framesSubmitted: 0, framesCompleted: 0 },
+      outputValidation: { status: 'NOT RUN' },
     },
     imageValidation: { status: 'NOT RUN', readbackFeedsProcessing: false },
   };
@@ -851,6 +878,7 @@ function createFsrFailureSummary(snapshot, policy, error, failureStage, computeP
       ...createFsrNotRunSummary(policy).lifecycle,
       state: snapshot?.state || 'failed',
       adapterDetected: snapshot?.adapterDetected === true,
+      deviceInitialized: snapshot?.deviceInitialized === true,
       shaderCompilationStatus: snapshot?.shaderCompilationStatus || 'NOT RUN',
       pipelineCreationStatus: snapshot?.pipelineCreationStatus || 'NOT RUN',
       resourceInitializationStatus: snapshot?.resourceInitializationStatus || 'NOT RUN',
@@ -864,6 +892,7 @@ function createFsrFailureSummary(snapshot, policy, error, failureStage, computeP
       easuDispatches: Number(snapshot?.easuDispatches) || 0,
       rcasDispatches: Number(snapshot?.rcasDispatches) || 0,
     },
+    stageResults: snapshot?.stageResults || createFsrNotRunSummary(policy).stageResults,
     adapter: snapshot?.adapter || null,
     adapterInfoAvailable: snapshot?.adapterInfoAvailable === true,
     adapterRequestPath: snapshot?.adapterRequestPath || '',
@@ -872,6 +901,25 @@ function createFsrFailureSummary(snapshot, policy, error, failureStage, computeP
     physicalGpuValidation: 'NOT RUN',
     independentComputeProbe: computeProbe || { status: 'NOT RUN', physicalGpuValidation: 'NOT RUN' },
     graphicsEnvironment: graphicsEnvironment || null,
+  };
+}
+
+function outputValidationStageResult(evidence = {}) {
+  const attempted = Boolean(evidence.firstOutputValidation || evidence.outputValidation
+    || evidence.stageAnalysis || evidence.visibleCanvasComparison);
+  if (!attempted) return { status: 'NOT RUN', reason: 'Post-processing output validation was not reached.' };
+  const passed = evidence.outputValidation?.state === 'PASS'
+    && evidence.outputValidation?.readbackForProcessing === false
+    && evidence.stageAnalysis?.status === 'PASS'
+    && evidence.motionCheck?.changed === true
+    && evidence.visibleCanvasComparison?.status === 'PASS';
+  return {
+    status: passed ? 'PASS' : 'FAIL',
+    textureReadbackStatus: evidence.outputValidation?.state || 'NOT RUN',
+    stageComparisonStatus: evidence.stageAnalysis?.status || 'NOT RUN',
+    visibleCanvasStatus: evidence.visibleCanvasComparison?.status || 'NOT RUN',
+    motionChanged: evidence.motionCheck?.changed === true,
+    reason: passed ? '' : 'One or more post-processing stage, motion, or visible-canvas checks did not pass.',
   };
 }
 
@@ -2043,6 +2091,7 @@ async function runSmokeTest() {
         lifecycle: {
           state: webGpuSnapshot.state,
           adapterDetected: webGpuSnapshot.adapterDetected === true,
+          deviceInitialized: webGpuSnapshot.deviceInitialized === true,
           shaderCompilationStatus: webGpuSnapshot.shaderCompilationStatus,
           pipelineCreationStatus: webGpuSnapshot.pipelineCreationStatus,
           resourceInitializationStatus: webGpuSnapshot.resourceInitializationStatus,
@@ -2059,6 +2108,16 @@ async function runSmokeTest() {
           workgroupsY: webGpuSnapshot.workgroupsY,
           easuDispatches: webGpuSnapshot.easuDispatches,
           rcasDispatches: webGpuSnapshot.rcasDispatches,
+        },
+        stageResults: {
+          ...(webGpuSnapshot.stageResults || {}),
+          outputValidation: {
+            status: imageValidationPassed ? 'PASS' : 'FAIL',
+            stageComparisonStatus: stageAnalysis.status,
+            visibleCanvasStatus: visibleCanvasComparison.status,
+            motionChanged: motionCheck.changed,
+            reason: imageValidationPassed ? '' : 'Stage comparison, motion, or visible-canvas validation failed.',
+          },
         },
         input: { width: webGpuSnapshot.inputWidth, height: webGpuSnapshot.inputHeight },
         intermediate: { width: webGpuSnapshot.outputWidth, height: webGpuSnapshot.outputHeight },
@@ -2139,6 +2198,7 @@ async function runSmokeTest() {
     if (computeReportWrite.error) throw new Error(`Could not write the independent WebGPU compute report: ${computeReportWrite.error}`);
     const packagedSummary = {
       schemaVersion: 1,
+      appVersion: app.getVersion(),
       status: 'PASS',
       gpuTestPolicy,
       failedStage: null,
@@ -2183,6 +2243,10 @@ async function runSmokeTest() {
         );
       }
     }
+    fsrIntegrationSummary.stageResults = {
+      ...(fsrIntegrationSummary.stageResults || createFsrNotRunSummary(gpuTestPolicy).stageResults),
+      outputValidation: outputValidationStageResult(webGpuEvidence),
+    };
     if (!webGpuAcceptance) {
       webGpuAcceptance = classifyWebGpuSmoke({ policy: gpuTestPolicy, computeProbe: webGpuBaselineProbe, fsrReport: fsrIntegrationSummary });
     }
@@ -2200,6 +2264,7 @@ async function runSmokeTest() {
       smokeChecks.bundledWebGpuFsr1 = 'SKIPPED';
       const packagedSummary = {
         schemaVersion: 1,
+        appVersion: app.getVersion(),
         status: 'PASS',
         gpuTestPolicy,
         failedStage: null,
@@ -2238,6 +2303,7 @@ async function runSmokeTest() {
       const failureSummaryPath = path.join(smokeOut, 'packaged-smoke-failure-summary.json');
       const failureSummary = {
         status: 'FAIL',
+        appVersion: app.getVersion(),
         failedStage: smokeStage,
         elapsedMs: Math.max(0, Date.now() - startedAt),
         webGpuIntegration: {
@@ -2256,6 +2322,10 @@ async function runSmokeTest() {
             nativeD3D12Adapters: initialGraphicsDiagnostics?.nativeFsrAdapters || null,
           },
           snapshot: webGpuSnapshot,
+          stageResults: {
+            ...(fsrIntegrationSummary?.stageResults || createFsrNotRunSummary(gpuTestPolicy).stageResults),
+            outputValidation: outputValidationStageResult(webGpuEvidence),
+          },
           firstFrameDiagnostic: compactWebGpuOutputEvidence(webGpuEvidence.firstOutputValidation),
           finalDiagnostic: compactWebGpuOutputEvidence(webGpuEvidence.outputValidation),
           stageComparison: webGpuEvidence.stageAnalysis,
@@ -2289,6 +2359,7 @@ async function runSmokeTest() {
       fs.writeFileSync(failureSummaryPath, `${JSON.stringify(failureSummary, null, 2)}\n`, { mode: 0o600 });
       const packagedFailure = {
         schemaVersion: 1,
+        appVersion: app.getVersion(),
         status: 'FAIL',
         gpuTestPolicy,
         failedStage: smokeStage,

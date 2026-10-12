@@ -10,6 +10,17 @@ I retried `gh run download` for the diagnostic artifacts and `gh run view --log`
 
 A fresh `gh api repos/shuvrajeetkamila/Tri-Core-Browser/actions/runners` request returned HTTP 403 (`Resource not accessible by integration`). Therefore configured self-hosted runner availability is **UNKNOWN**, not confirmed absent or present. No physical GPU/driver result or live packaged WebGPU FSR1 PASS is claimed.
 
+## Milestone 3 evidence/reporting changes on the current branch
+
+The current unpushed branch adds a deterministic, report-driven Actions summary without changing the optional/required GPU policies or distribution gates:
+
+- Level A and Level B now have distinct packaged-process and packaged-evidence-validation steps. The latter's actual GitHub step outcome is passed to the always-run summary step, so a process crash yields validation `NOT RUN`, a failed JSON/PNG validator yields `FAIL`, and only a successful validator yields `PASS`.
+- Both summaries run after diagnostic/distribution artifact handling and append to `GITHUB_STEP_SUMMARY`; they do not overwrite earlier failures or turn a failed smoke step green. They record run/commit/branch, versions, actual package/executable/process/validator/build/upload step outcomes, independent GPU-free checks, adapter/device/driver classification, compute and EASU/RCAS stage statuses, output dimensions/pixel metrics/hashes/timing, failure detail, and artifact names. Missing/crashed reports are explicit `FAIL`/`NOT RUN`; synthetic fixtures are labeled and cannot establish hardware evidence. Logs are bounded and secret-like values are redacted.
+- The packaged evidence validator now enforces packaged/acceptance schema version 1, checks PNG chunk CRCs and zlib-decompressed scanline/filter structure (including supported color depths/interlace layouts), checks report/path/hash/dimension consistency, and requires finite non-trivial pixel metrics plus a sufficiently accurate visible-canvas comparison before accepting a live FSR report. WARP remains separately labeled software-only.
+- Deterministic summary tests cover `PASS`, `SKIPPED`, required `UNSUPPORTED`, `FAIL`, `NOT RUN`, missing/crashed reports, JSON/summary inconsistencies, validator outcomes, secret redaction, and fixture-vs-hardware classification. Validator tests cover malformed compressed PNG data, schema mismatch, and output-dimension mismatch.
+
+Local verification for these edits: `npm ci` **PASS** (locked install; npm reported 8 moderate audit findings), `npm test` **PASS — 99/99** (85 pre-existing tests plus 14 new tests), `npm run build` **PASS** (Vite 8.3.4; 11 modules), Node syntax checks for the modified JavaScript **PASS**, YAML parsing of `build.yml`, `release.yml`, and `fsr1-native-poc.yml` **PASS**, and `git diff --check` **PASS**. `actionlint` and PowerShell (`pwsh`) are not installed here. A Windows executable package, hosted Windows smoke, WARP run, and packaged WebGPU smoke were **NOT RUN** locally; this Linux checkout cannot execute the Windows package. Physical-GPU Level B remains **NOT RUN**. The runner inventory response remains inconclusive (HTTP 403), so no runner is presumed available or absent. No CI artifact or new physical-GPU claim is made from these local checks.
+
 ## Investigation of the observed failure
 
 The latest pre-hardening run was `38249515260` at source commit `8f5bcd4ea899c437820e2f9efa0918b72ccac2a9`. Its Windows job failed at **“Run packaged-app smoke test.”** The preceding executable build, package validation, automated tests, and audit succeeded; the separate Linux renderer/WASM/dependency job succeeded. Distribution assembly and upload were skipped.
@@ -117,9 +128,9 @@ The GPU runner is deliberately not configured through a fallback expression. Own
 - software-adapter evidence versus required physical adapter and driver evidence;
 - runtime failures failing both policies.
 
-`tests/windows-smoke-workflows.test.js` asserts the Level A/Level B/release runner policies, artifact retention, shared validation script, and strict package gate. These tests validate control-flow and policy only; they are not evidence of WebGPU initialization, dispatch, rendered output, a physical GPU, or packaged FSR execution.
+`tests/smoke-job-summary.test.js` covers truthful `PASS` / `SKIPPED` / `UNSUPPORTED` / `FAIL` / `NOT RUN` reporting, missing/crashed reports, consistency between packaged and per-stage JSON, validator outcomes, original failure preservation, secret redaction, and fixture-vs-hardware classification. `tests/validate-packaged-smoke.test.js` also covers malformed compressed PNG data with recomputed CRCs, schema-version mismatch, and inconsistent stage dimensions. `tests/windows-smoke-workflows.test.js` asserts the Level A/Level B/release runner policies, actual smoke/validator/build/artifact outcomes, always-run summaries, artifact retention, and strict package gate. These tests validate control-flow, policy, and synthetic data only; they are not evidence of WebGPU initialization, dispatch, rendered output, a physical GPU, or packaged FSR execution.
 
-The shared `scripts/validate-packaged-smoke.cjs` checks the emitted JSON reports and PNG evidence. `scripts/package-windows.ps1` independently gates distribution assembly.
+The shared `scripts/validate-packaged-smoke.cjs` checks the emitted JSON reports, evidence paths, PNG chunk CRCs and decompressed image data, hashes, declared/report dimensions, stage metrics, visible output, and policy consistency. `scripts/package-windows.ps1` independently gates distribution assembly.
 
 ## Evidence and limitations
 
@@ -134,12 +145,12 @@ The shared `scripts/validate-packaged-smoke.cjs` checks the emitted JSON reports
 | Self-hosted GPU runner availability | **UNKNOWN**; `gh api repos/shuvrajeetkamila/Tri-Core-Browser/actions/runners` returned HTTP 403 `Resource not accessible by integration`. No runner was registered or dispatched. |
 | Physical GPU / driver / Level B | **NOT RUN**; Level B was skipped on push events. No physical-GPU or driver PASS claimed. |
 | Separate native D3D12/WARP harness | Run `38265255364` passed official EASU/RCAS harness execution on WARP software. It is not packaged WebGPU FSR or physical hardware. |
-| `npm ci` | Not rerun; dependencies were already installed. The preceding milestone's locked install passed. |
-| `npm test` | **PASS — 85/85**, 0 failures/skips. Deterministic mocks and synthetic evidence only; not GPU evidence. |
-| `npm run build` | **PASS** — Vite production renderer build, 11 modules. No Windows executable package was built locally. |
-| Workflow/config validation | **PASS** — parsed `build.yml`, `release.yml`, `fsr1-native-poc.yml`, and `package.json`; the workflow-policy tests also passed within `npm test`. |
-| `npm audit --audit-level=high` | **PASS** — 8 moderate findings, 0 high/critical. No forced dependency update applied. |
-| `git diff --check` | **PASS** — no whitespace errors. |
+| `npm ci` (current branch) | **PASS** — 298 locked packages installed; npm reported 8 moderate audit findings. No dependency update was applied. |
+| `npm test` (current branch) | **PASS — 99/99**, 0 failures/skips (85 existing tests plus 14 evidence/reporting tests). Deterministic mocks and synthetic evidence only; not GPU evidence. |
+| `npm run build` (current branch) | **PASS** — Vite 8.3.4 production renderer build, 11 modules. No Windows executable package was built locally. |
+| Workflow/config validation (current branch) | **PASS** — `js-yaml` parsed `build.yml`, `release.yml`, and `fsr1-native-poc.yml`; modified JavaScript syntax checks and workflow-policy tests passed. PowerShell and `actionlint` checks were unavailable because those tools are not installed. |
+| `npm audit --audit-level=high` | Not rerun on this branch. `npm ci` reported 8 moderate findings; the prior milestone's audit recorded 0 high/critical. No forced dependency update applied. |
+| `git diff --check` (current branch) | **PASS** — no whitespace errors. |
 | WARP PNG processing | Level A validator succeeded for the WARP diagnostic route in both hosted runs, but ZIP contents are unreadable here; separate WARP harness pass is software-only. |
 | Ordinary external websites / games / cloud video | No FSR page interception or arbitrary game support claimed. |
 | DLSS | Not implemented; no fallback/substitution claim. |

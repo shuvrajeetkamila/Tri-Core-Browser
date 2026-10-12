@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const zlib = require('node:zlib');
 const {
   normalizeGpuTestPolicy,
   isUnsafeLaunch,
@@ -52,10 +53,16 @@ function pngInfo(filePath) {
   assert(bytes.subarray(0, 8).equals(PNG_SIGNATURE), `Evidence is not a PNG: ${filePath}`);
   let width = 0;
   let height = 0;
+  let bitDepth = 0;
+  let colorType = -1;
+  let compressionMethod = -1;
+  let filterMethod = -1;
+  let interlaceMethod = -1;
   let offset = 8;
   let chunkCount = 0;
-  let idatBytes = 0;
   let ended = false;
+  let paletteSeen = false;
+  const idatParts = [];
   while (offset + 12 <= bytes.length) {
     const length = bytes.readUInt32BE(offset);
     const dataStart = offset + 8;
@@ -68,11 +75,20 @@ function pngInfo(filePath) {
       assert(type === 'IHDR' && length === 13, `PNG does not begin with a valid IHDR: ${filePath}`);
       width = bytes.readUInt32BE(dataStart);
       height = bytes.readUInt32BE(dataStart + 4);
+      bitDepth = bytes[dataStart + 8];
+      colorType = bytes[dataStart + 9];
+      compressionMethod = bytes[dataStart + 10];
+      filterMethod = bytes[dataStart + 11];
+      interlaceMethod = bytes[dataStart + 12];
       assert(width > 0 && height > 0 && width <= 32768 && height <= 32768, `PNG dimensions are invalid or out of bounds: ${filePath}`);
     } else if (type === 'IHDR') {
       throw new Error(`PNG contains a duplicate IHDR: ${filePath}`);
     }
-    if (type === 'IDAT') idatBytes += length;
+    if (type === 'PLTE') {
+      assert(!paletteSeen && length > 0 && length <= 768 && length % 3 === 0, `PNG palette is invalid: ${filePath}`);
+      paletteSeen = true;
+    }
+    if (type === 'IDAT') idatParts.push(bytes.subarray(dataStart, dataEnd));
     offset = crcEnd;
     chunkCount += 1;
     if (type === 'IEND') {
@@ -81,8 +97,56 @@ function pngInfo(filePath) {
       break;
     }
   }
-  assert(ended && idatBytes > 0 && offset === bytes.length, `PNG must contain image data and a final IEND chunk with no trailing bytes: ${filePath}`);
-  return { bytes, width, height };
+  assert(ended && idatParts.some((part) => part.length > 0) && offset === bytes.length,
+    `PNG must contain image data and a final IEND chunk with no trailing bytes: ${filePath}`);
+  const channelsByType = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 };
+  const validBitDepths = { 0: [1, 2, 4, 8, 16], 2: [8, 16], 3: [1, 2, 4, 8], 4: [8, 16], 6: [8, 16] };
+  assert(Object.hasOwn(channelsByType, colorType) && validBitDepths[colorType].includes(bitDepth),
+    `PNG color type / bit depth is invalid: ${filePath}`);
+  assert(compressionMethod === 0 && filterMethod === 0 && (interlaceMethod === 0 || interlaceMethod === 1),
+    `PNG compression, filter, or interlace method is invalid: ${filePath}`);
+  if (colorType === 3) assert(paletteSeen, `Indexed-color PNG is missing its PLTE palette: ${filePath}`);
+
+  const bitsPerPixel = channelsByType[colorType] * bitDepth;
+  const passes = interlaceMethod === 0
+    ? [{ startX: 0, startY: 0, stepX: 1, stepY: 1 }]
+    : [
+      { startX: 0, startY: 0, stepX: 8, stepY: 8 },
+      { startX: 4, startY: 0, stepX: 8, stepY: 8 },
+      { startX: 0, startY: 4, stepX: 4, stepY: 8 },
+      { startX: 2, startY: 0, stepX: 4, stepY: 4 },
+      { startX: 0, startY: 2, stepX: 2, stepY: 4 },
+      { startX: 1, startY: 0, stepX: 2, stepY: 2 },
+      { startX: 0, startY: 1, stepX: 1, stepY: 2 },
+    ];
+  const passSizes = passes.map((pass) => ({
+    width: Math.max(0, Math.ceil((width - pass.startX) / pass.stepX)),
+    height: Math.max(0, Math.ceil((height - pass.startY) / pass.stepY)),
+  })).filter((pass) => pass.width > 0 && pass.height > 0);
+  const rowSizes = passSizes.map((pass) => ({
+    height: pass.height,
+    bytes: Math.ceil((pass.width * bitsPerPixel) / 8),
+  }));
+  const expectedInflatedBytes = rowSizes.reduce((total, pass) => total + pass.height * (pass.bytes + 1), 0);
+  const maxInflatedBytes = 256 * 1024 * 1024;
+  assert(expectedInflatedBytes > 0 && expectedInflatedBytes <= maxInflatedBytes,
+    `PNG decompressed pixel data is empty or exceeds the validation limit: ${filePath}`);
+  let decoded;
+  try {
+    decoded = zlib.inflateSync(Buffer.concat(idatParts), { maxOutputLength: expectedInflatedBytes + 1 });
+  } catch (error) {
+    throw new Error(`PNG image data cannot be decompressed: ${filePath} (${error.message})`);
+  }
+  assert(decoded.length === expectedInflatedBytes, `PNG decompressed image data length does not match its dimensions: ${filePath}`);
+  let decodedOffset = 0;
+  for (const pass of rowSizes) {
+    for (let row = 0; row < pass.height; row += 1) {
+      const filter = decoded[decodedOffset];
+      assert(filter <= 4, `PNG scanline uses an invalid filter method: ${filePath}`);
+      decodedOffset += pass.bytes + 1;
+    }
+  }
+  return { bytes, width, height, bitDepth, colorType, interlaceMethod };
 }
 
 function evidenceFilePath(root, rawPath, label) {
@@ -155,12 +219,80 @@ function validateVisibleFsrEvidence(root, fsrReport) {
   assert(Number(fsrReport.input?.width) > 0 && Number(fsrReport.input?.height) > 0, 'The bundled scene input dimensions are missing.');
   assert(Number(fsrReport.output?.width) > Number(fsrReport.input.width) && Number(fsrReport.output?.height) > Number(fsrReport.input.height), 'The bundled scene output dimensions are not larger than its input.');
   assert(fsrReport.timingDefinition?.includes('not a GPU timestamp'), 'WebGPU queue-completion timing must not be represented as a GPU timestamp.');
+  const queueTimes = [
+    Number(fsrReport.lastQueueCompletionWallMs),
+    Number(fsrReport.averageQueueCompletionWallMs),
+    Number(fsrReport.maxQueueCompletionWallMs),
+  ];
+  assert(queueTimes.every((value) => Number.isFinite(value) && value > 0)
+    && queueTimes[1] <= queueTimes[2] && queueTimes[0] <= queueTimes[2],
+  'WebGPU queue-completion wall-time measurements are missing or inconsistent.');
 
+  const declaredStageDimensions = {
+    lowResolutionInput: fsrReport.input,
+    easuIntermediate: fsrReport.output,
+    rcasOutput: fsrReport.output,
+  };
   for (const name of ['lowResolutionInput', 'easuIntermediate', 'rcasOutput']) {
     const capture = fsrReport.imageValidation?.captures?.[name];
+    const declared = declaredStageDimensions[name];
     assert(capture?.path, `Post-processing stage capture is missing: ${name}`);
+    assert(Number(capture.width) === Number(declared?.width) && Number(capture.height) === Number(declared?.height),
+      `${name} capture dimensions differ from the FSR input/output dimensions.`);
     verifyReportedPng(evidenceFilePath(root, capture.path, `${name} stage`), capture, `${name} stage`);
   }
+  const generation = fsrReport.stageResults?.outputGeneration;
+  if (generation?.input || generation?.output) {
+    assert(Number(generation.input?.width) === Number(fsrReport.input.width)
+      && Number(generation.input?.height) === Number(fsrReport.input.height), 'Output-generation input dimensions disagree with the FSR report.');
+    assert(Number(generation.output?.width) === Number(fsrReport.output.width)
+      && Number(generation.output?.height) === Number(fsrReport.output.height), 'Output-generation dimensions disagree with the FSR report.');
+  }
+  const comparison = fsrReport.imageValidation?.stageComparison;
+  const comparisonDimensions = comparison?.dimensions;
+  assert(comparisonDimensions && Number(comparisonDimensions.input?.width) === Number(fsrReport.input.width)
+    && Number(comparisonDimensions.input?.height) === Number(fsrReport.input.height)
+    && Number(comparisonDimensions.easu?.width) === Number(fsrReport.output.width)
+    && Number(comparisonDimensions.easu?.height) === Number(fsrReport.output.height)
+    && Number(comparisonDimensions.rcas?.width) === Number(fsrReport.output.width)
+    && Number(comparisonDimensions.rcas?.height) === Number(fsrReport.output.height),
+  'Numerical stage-comparison dimensions disagree with the input/output report.');
+  const numerical = comparison.numerical || {};
+  const pixelCount = Number(fsrReport.output.width) * Number(fsrReport.output.height);
+  assert(Number(numerical.comparedOutputPixels) === pixelCount
+    && Number(numerical.comparedRgbChannels) === pixelCount * 3,
+  'Numerical stage-comparison sample counts disagree with the output dimensions.');
+  for (const name of [
+    'easuVsBilinearMeanAbsoluteErrorNormalized',
+    'easuChangedPixelFraction',
+    'rcasVsEasuMeanAbsoluteErrorNormalized',
+    'rcasChangedPixelFraction',
+    'inputMeanNeighborDifferenceNormalized',
+    'rcasMeanNeighborDifferenceNormalized',
+  ]) assert(Number.isFinite(Number(numerical[name])), `Numerical stage-comparison metric is missing or not finite: ${name}.`);
+  assert(Number(numerical.easuVsBilinearMeanAbsoluteErrorNormalized) > 0
+    && Number(numerical.rcasVsEasuMeanAbsoluteErrorNormalized) > 0
+    && Number(numerical.easuChangedPixelFraction) > 0 && Number(numerical.easuChangedPixelFraction) <= 1
+    && Number(numerical.rcasChangedPixelFraction) > 0 && Number(numerical.rcasChangedPixelFraction) <= 1
+    && Number(numerical.inputMeanNeighborDifferenceNormalized) > 0
+    && Number(numerical.rcasMeanNeighborDifferenceNormalized) > 0,
+  'Numerical stage-comparison metrics do not prove meaningful input/EASU/RCAS pixel differences.');
+  assert(Number.isInteger(Number(numerical.inputDistinctSampledColors)) && Number(numerical.inputDistinctSampledColors) > 2
+    && Number.isInteger(Number(numerical.outputDistinctSampledColors)) && Number(numerical.outputDistinctSampledColors) > 2,
+  'Numerical stage-comparison colors do not establish meaningful image content.');
+
+  const visibleComparison = fsrReport.imageValidation?.visibleCanvas;
+  const visibleSampleCount = Number(visibleComparison?.sampleCount);
+  assert(visibleSampleCount >= 12
+    && Number.isFinite(Number(visibleComparison?.meanAbsoluteErrorNormalized))
+    && Number.isFinite(Number(visibleComparison?.luminanceCorrelation))
+    && Number(visibleComparison.meanAbsoluteErrorNormalized) >= 0
+    && Number(visibleComparison.meanAbsoluteErrorNormalized) <= 0.45
+    && Number(visibleComparison.luminanceCorrelation) >= 0.55
+    && Number(visibleComparison.luminanceCorrelation) <= 1
+    && Number(visibleComparison.samplesWithin30PercentMeanError) >= Math.ceil(visibleSampleCount * 0.5)
+    && Number(visibleComparison.distinctObservedColors) >= Math.min(4, visibleSampleCount),
+  'Visible-canvas comparison lacks sufficient matched samples, acceptance-threshold accuracy/correlation, or varied observed pixels.');
   const visibleCapture = fsrReport.visibleOutputCapture;
   assert(visibleCapture?.path, 'Post-processing visible-canvas screenshot evidence is missing.');
   verifyReportedPng(evidenceFilePath(root, visibleCapture.path, 'visible-canvas screenshot'), visibleCapture, 'visible-canvas screenshot');
@@ -203,6 +335,7 @@ function validate() {
   const packaged = readJson(root, 'packaged-smoke-summary.json');
   const compute = readJson(root, 'webgpu-compute-smoke-summary.json');
   const fsr = readJson(root, 'fsr1-webgpu-summary.json');
+  assert(packaged.schemaVersion === 1, `Unsupported packaged-smoke-summary.json schemaVersion: ${packaged.schemaVersion ?? 'missing'}.`);
   assert(packaged.status === 'PASS', `Packaged GPU-independent smoke did not pass (status=${packaged.status}).`);
   assert(packaged.gpuTestPolicy === policy, `Packaged smoke policy mismatch: expected ${policy}, got ${packaged.gpuTestPolicy}.`);
   const checks = packaged.checks || {};
@@ -228,6 +361,7 @@ function validate() {
 
   const acceptance = packaged.webGpuAcceptance;
   assert(acceptance && typeof acceptance === 'object', 'Packaged smoke is missing the WebGPU acceptance summary.');
+  assert(acceptance.schemaVersion === 1, `Unsupported WebGPU acceptance schemaVersion: ${acceptance.schemaVersion ?? 'missing'}.`);
   if (compute.status === 'PASS') assert(isKnownAnswerPass(compute), 'Known-answer WebGPU probe did not verify an actual 19 + 23 = 42 compute dispatch/readback.');
   else if (compute.status === 'UNSUPPORTED') assert(isNoAdapterReport(compute), 'UNSUPPORTED compute report does not prove safe no-adapter discovery.');
   else throw new Error(`Known-answer compute test must PASS or prove adapter UNSUPPORTED; got ${compute.status}.`);
