@@ -114,6 +114,33 @@ test('runtime error is FAILED and takes precedence over initialized/active flags
   assert.equal(chooseAutomaticMode(report), 'wasm');
 });
 
+test('WebGPU initialization failures retain their stage and safely fall back without active-processing claims', () => {
+  const report = makeReport({
+    integration: {
+      fsr: {
+        implemented: true,
+        detected: true,
+        adapterDetected: true,
+        failed: true,
+        failureStage: 'easu-pipeline-creation',
+        error: 'EASU compute pipeline validation failed.',
+        automaticEligible: false,
+        scope: 'Bundled game-owned WebGPU scene only.',
+      },
+    },
+  });
+  const feature = report.technologies.fsr;
+  assert.equal(feature.failed, true);
+  assert.equal(feature.initialized, false);
+  assert.equal(feature.failureStage, 'easu-pipeline-creation');
+  const selected = resolveGraphicsMode('fsr', { capabilities: report });
+  assert.equal(selected.effectiveMode, 'standard');
+  assert.equal(selected.upscalerActive, false);
+  assert.equal(selected.processingFrames, false);
+  assert.match(selected.message, /failed during easu-pipeline-creation/);
+  assert.match(selected.message, /Standard Chromium rendering remains active/);
+});
+
 test('ACTIVE and PROCESSING FRAMES require initialized compatible runtime evidence', () => {
   const initialized = makeReport({
     gpuDevices: [{ vendorId: '0x1002', vendor: 'AMD', name: 'Radeon test device' }],
@@ -146,6 +173,40 @@ test('a completed one-shot frame counter is historical evidence, not an active s
   assert.equal(state.effectiveMode, 'standard');
   assert.equal(state.upscalerActive, false);
   assert.equal(state.processingFrames, false);
+});
+
+test('manual FSR can report a verified game-owned WebGPU scene while Auto excludes it from ordinary tabs', () => {
+  const report = makeReport({
+    integration: {
+      fsr: {
+        implemented: true,
+        detected: true,
+        compatible: true,
+        initialized: true,
+        active: true,
+        processingFrames: true,
+        processedFrames: 9,
+        automaticEligible: false,
+        backend: 'WebGPU game color target → FSR1 EASU + RCAS → visible canvas',
+        scope: 'Bundled WebGPU scene only; ordinary tabs remain Chromium.',
+        queueCompletionWallMs: 3.25,
+        averageQueueCompletionWallMs: 3.5,
+        maxQueueCompletionWallMs: 4.1,
+      },
+    },
+  });
+  assert.equal(report.technologies.fsr.state, 'PROCESSING FRAMES');
+  assert.equal(report.technologies.fsr.queueCompletionWallMs, 3.25);
+  assert.equal(chooseAutomaticMode(report), 'wasm');
+
+  const manual = resolveGraphicsMode('fsr', { capabilities: report });
+  assert.equal(manual.effectiveMode, 'fsr');
+  assert.equal(manual.state, 'PROCESSING FRAMES');
+  assert.equal(manual.upscalerActive, true);
+  assert.equal(manual.processingFrames, true);
+  assert.equal(manual.processedFrames, 9);
+  assert.match(manual.backend, /WebGPU game color target/);
+  assert.match(manual.message, /Bundled WebGPU scene only/);
 });
 
 test('standard mode means Chromium page rendering and no upscaler', () => {

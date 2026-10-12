@@ -1,61 +1,80 @@
-# Browser-frame FSR integration — technical decision record
+# Browser/game FSR integration — technical decision record
 
 **Date:** 2026-10-11
 **Branch:** `arena/66abfdc9-tri-core-browser`
-**Decision:** Implement the largest safe, publicly supported vertical slice: a user-approved screenshot/readback pipeline for a bundled animated WebGL2 diagnostic scene.
-**Current evidence status:** Windows CI on app/source commit `eee56b78a5259429b4e5d7be3b73adf21ec99365` passed the native helper build, synthetic D3D12/WARP regression, packaged executable validation, three-frame/three-resolution bundled-scene capture-to-FSR smoke, portable assembly, and Actions artifact upload ([package run 38149140832](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38149140832), [native run 38149140851](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38149140851)). This is WARP software-only evidence, not physical-GPU validation. No general-page or performance claim is made.
+**Decision:** Implement a bounded FSR1 vertical slice in the app-owned WebGPU game-render path. Keep Electron `capturePage()` → PNG → native D3D12 FSR1 strictly diagnostic. Do not claim arbitrary-page or compositor upscaling.
+**Verification status:** Source implements the game-owned path and post-processing numerical/screenshot evidence hooks. The current-source Windows packaged WebGPU smoke, target-runtime pipeline/dispatch, numerical GPU output, visible pixels, and physical-GPU behavior have not yet been verified. Existing WARP evidence covers only the separate native/screenshot regression.
 
-## Observed architecture and graphics boundary
+## Architecture and integration boundary
 
-- TRI-CORE BROWSER is an Electron 44.7.0 desktop app. Each core is a sandboxed `WebContentsView`; `electron/main.cjs` manages active tabs and view bounds. Remote renderer code has no Node access, context isolation remains enabled, and browser cores use separate persistent session partitions.
-- Chromium renders/composites web contents within its renderer/GPU-process architecture. Electron's `app.getGPUInfo('complete')` and `app.getGPUFeatureStatus()` are diagnostic APIs; they do not yield a supported D3D12/Vulkan device, arbitrary page `ID3D12Resource`, compositor surface/swap-chain, depth/motion vectors, or interop synchronization contract to this app.
-- Electron 44.7.0's public `WebContents.capturePage(rect?, opts?)` returns a `NativeImage`; `NativeImage.toPNG()` provides a supported screenshot/readback boundary. This is not a zero-copy or real-time handoff and offers no path to return FSR output into Chromium's compositor.
-- The Windows C++ helper owns its D3D12 device, queue, textures, command lists, fence, WIC decode/encode, and AMD FSR1 EASU + RCAS pipeline. It now accepts an explicit app-owned PNG as well as the existing deterministic synthetic regression input.
-- No Chromium fork or compositor patch is present. Current Windows WARP CI provides software coverage only; physical-GPU behavior remains a separate gate.
+TRI-CORE is an Electron 44.7.0 desktop app. Three sandboxed `WebContentsView` instances render ordinary website tabs inside Chromium. The app can query Electron/Chromium GPU feature/device information, but the public `WebContentsView` API does not expose arbitrary tabs' D3D12/Vulkan textures, game depth/motion vectors, native swap chain, or a compositor synchronization contract. The app does not inspect renderer/GPU-process memory, inject code into remote pages, or weaken the sandbox.
 
-## Adopted implementation: capture → process → preview
+Electron's public `capturePage()` returns a `NativeImage`. That is a valid bounded screenshot boundary, not a live GPU handle, zero-copy transfer or means to return processed output to Chromium's compositor. The screenshot path remains useful for measuring/validating the separate native helper; it is not the selected live integration.
 
-1. Load a bundled animated WebGL2 Orbital Runner scene in a real, sandboxed `WebContentsView`.
-2. Only on explicit user action, validate that the requested tab is active, visible, not loading, marked as the app-owned diagnostic scene, and still at the exact bundled file URL.
-3. Capture the visible WebContentsView using Electron's public `capturePage()` API. Validate dimensions and input size, write the actual PNG, record a SHA-256, and pass only fixed command-line arguments to the packaged native helper. Revalidate the scene/active-tab context before native processing so navigation/tab changes fail closed.
-4. The helper decodes that PNG using Windows Imaging Component, creates its own D3D12 textures, uploads the browser screenshot, runs pinned AMD FSR 1.0.2 EASU + RCAS, reads back and writes a 2× PNG plus JSON/text reports.
-5. The main process validates the report, input/output dimensions, software-vs-hardware class, per-frame bilinear-reference path, checksum, and reopened output/reference images, counts the processed frame, and returns a PNG preview to the local browser UI. Each source frame has its own bilinear-reference PNG so later captures cannot overwrite earlier evidence. The original Chromium view remains active and unchanged; any failure leaves normal rendering intact.
-6. Record per-frame source/paths/hash, scene metadata, adapter name/vendor/device, API/feature support, input/output dimensions, EASU/RCAS GPU timestamp when available, native process/fence wall time, `capturePage()` wall time, and overall capture-to-preview wall time. These numbers are not game FPS and do not establish a performance gain.
-7. The Windows packaged smoke gate requires three unique changing frames at three view/capture resolutions with `capturePage()` PNG inputs processed by D3D12 WARP, validates each report and its input/output/bilinear-reference PNGs plus unique reference paths, and retains captures. The gate passed on app/source commit `eee56b7`; the smoke report and captures are retained in the `TriCoreBrowser-Windows-x64` Actions artifact from [run 38149140832](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38149140832). Physical-GPU and arbitrary-page acceptance remain separate and unverified.
+### Chosen vertical slice: app/game-owned WebGPU target
 
-This is real content rendered by the browser's controlled WebGL2 scene entering FSR through a screenshot file and returning to the local UI as a diagnostic preview. It is **not** an original GPU texture handoff, zero-copy interop, a compositor replacement, a live page upscaler, a performance switch, or support for ordinary pages, third-party browser games, video, DRM, cloud gaming, or external applications.
+`app/diagnostics/fsr1-webgpu.html` loads a local, sandboxed controlled scene. Its JavaScript:
 
-## Adapter selection and safe fallback
+1. Requests a WebGPU adapter/device and captures adapter identity when Chromium exposes it.
+2. Renders an animated game-like scene at half the visible canvas resolution into a WebGPU texture owned by this page.
+3. Compiles distinct AMD FSR1 EASU and RCAS WGSL compute pipelines and dispatches them over GPU textures.
+4. Uses a separate presentation render pipeline to submit the RCAS result to the visible WebGPU canvas. The image-processing path uses no CPU pixel readback; optional timestamp-query data and explicit post-run validation copies are separate diagnostic readback.
+5. Reports adapter/device/shader/pipeline/resource lifecycle, per-stage dispatch counts, submitted/completed frames, source/output dimensions, and queue-completion wall timing (not a GPU timestamp). Runtime accuracy of these checks awaits the packaged Windows gate.
 
-The helper enumerates non-software D3D12 adapters, reports model/vendor/device IDs, dedicated-memory amount, feature level, shader model, required RGBA8/SRV/UAV features, and WARP availability. Hardware processing uses an explicit compatible adapter selection (or the first compatible adapter when no index is requested) and does not fall back to WARP. WARP is selected only by the test harness/smoke path and is always reported as software; the physical-GPU gate stays `NOT RUN`. Vendor/device identification or reported features alone are not proof of physical hardware or FSR quality.
+The source architecture is a genuine game-side integration design because the page owns its render target and inserts FSR into its own WebGPU render graph. It does **not** automatically upscale other web pages or third-party games. The app's global automatic mode deliberately excludes this scene-specific path so it cannot imply that the other cores are being upscaled. Manual FSR status is tied to this scene's reported pipeline state and completed frames; those runtime claims remain unverified until packaged smoke passes.
 
-The graphics controller keeps DLSS, FSR, WASM, hybrid policy, and standard Chromium visible/selectable. Auto priority remains DLSS → FSR → WASM for compatible, initialized implementations, but the one-shot FSR capture helper is not eligible for automatic page rendering. WASM remains runtime-only. Manual selection of an unavailable or failed upscaler safely retains Chromium rendering. No driver is installed or changed.
+The packaged CI gate freezes completed output, copies original/EASU/RCAS textures only for post-processing numerical comparison, and compares actual `capturePage()` canvas samples with the frozen RCAS texture. Those pixels/captures never feed FSR. The numerical check is a sanity baseline, not bit-for-bit AMD shader conformance. A passing queue-completion promise alone is not visible-output verification.
 
-## Alternatives considered
+### Retained screenshot diagnostic
 
-- **Direct D3D12/Vulkan interop from `WebContentsView`:** no supported public native-texture handle or synchronization contract; do not guess handles or inspect another process's memory.
-- **Maintained Chromium/Electron compositor fork:** likely long-term route to true low-latency browser scaling. Requires compositor/GPU-process source changes, security and synchronization review, and rebases against Electron/Chromium; outside a safe local renderer patch.
-- **Inject WebGL/WebGPU hooks into arbitrary pages:** rejected as incomplete and unsafe across workers, OffscreenCanvas, CSP, isolation, video, and game engines; does not create a general native resource bridge.
-- **Desktop capture/window capture or graphics-memory interception:** rejected; unrelated/DRM content exposure and no supported page texture ownership/synchronization.
-- **Independent native synthetic texture:** retained only as a D3D12 component regression; it is not browser integration.
-- **NVIDIA Streamline/DLSS:** use only official, authorized runtime/feature binaries and approvals. A real integration needs a controlled D3D12/Vulkan renderer with actual color/depth/motion vectors, frame constants, synchronization, application-ID approval, and compatible NVIDIA hardware. None is present; no DLSS/Frame Generation claim is made.
+The distinct WebGL2 test scene still exercises:
 
-## Scope / compatibility categories
+`WebContentsView.capturePage()` PNG → WIC decode/CPU readback → separate app-owned D3D12 FSR1 EASU + RCAS → output PNG/report/preview.
 
-| Content path | Category | Status |
-| --- | --- | --- |
-| Controlled WebAssembly module | Tested/working runtime diagnostic | Compiles, executes, and checks `19 + 23 = 42`; not image upscaling. |
-| Existing standard Chromium pages | Tested/working rendering | No FSR/DLSS modification; standard fallback remains. |
-| Bundled animated WebGL2 scene → capturePage PNG → FSR1 preview | Verified by packaged WARP smoke for the bounded diagnostic scene | The successful app/source commit `eee56b7` passed three changing frames at three capture resolutions, per-frame PNG/report/reference validation, portable assembly and artifact upload. WARP is software; physical GPU is not inferred. |
-| Synthetic native input → FSR1 | Component regression passed on WARP | The app/source commit `eee56b7` compiled the helper and passed the isolated software regression ([run 38149140851](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38149140851)); this is separate from the packaged browser-frame smoke and does not prove physical-GPU support. |
-| Arbitrary HTTP(S) pages and browser games, including arbitrary WebGL/WebGPU | Architecture-blocked / unsupported | No supported Chromium page-texture/compositor interop. |
-| Video, protected/DRM streams, cloud gaming, other processes | Unsupported / not tested | No capture/hook path is implemented. |
-| DLSS / Frame Generation | Not implemented / not tested | No authorized runtime, native renderer, initialization, or hardware evidence. |
+It requires explicit user action and the exact bundled test-scene URL. It measures capture, readback, helper, GPU timestamp (if available), and round-trip costs. It is always labeled **diagnostic-only**; it is not live browser integration. Existing CI evidence for three changing frames at three resolutions was on D3D12 WARP software only (prior source commit `eee56b7`).
 
-## Required gates before stronger claims
+## Electron shared-texture investigation
 
-- **Current-source CI:** The packaged browser-frame gate passed on app/source commit `eee56b7` ([run 38149140832](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38149140832)); the portable Actions artifact contains the smoke evidence. This supports only the bundled-scene screenshot-to-FSR path on WARP. WARP proves software pipeline execution only, not physical-GPU capability; no public GitHub Release was published.
-- **Physical hardware:** run the helper with `--hardware --adapter-index N` on a real Windows GPU; review model/vendor/driver/API/capability report, input/output captures, dimensions/frame counts/timings, and verify the adapter is physical. AMD-vendor-specific validation is separate.
-- **Performance:** compare honest baselines on supported hardware, including capture/readback, helper startup, upload, GPU, readback, and preview costs. Do not equate 2× output dimensions with faster rendering.
-- **Arbitrary web content:** require a supported Chromium compositor/GPU integration and security/resource/synchronization review before expanding scope.
-- **DLSS:** require NVIDIA authorization, current official feature/runtime terms, a controlled native renderer and compatible device before implementation or claims.
+Electron 44.7.0 source/docs expose an experimental offscreen route:
+
+- `webPreferences.offscreen.useSharedTexture` creates offscreen contents and shared-texture capture.
+- Main-process import/send and renderer receiver APIs can present the shared texture as a `VideoFrame`; Electron's upstream fixture consumes it with WebGPU.
+- Electron source includes Windows NT-handle handling and OSR shared-resource/keyed-mutex code.
+- The upstream shared-texture end-to-end spec is gated to macOS arm64. This is not evidence that TRI-CORE can import/process/present frames on Windows.
+
+Official references: [shared-texture API](https://github.com/electron/electron/blob/v44.7.0/docs/api/shared-texture.md), [imported frame lifetime](https://github.com/electron/electron/blob/v44.7.0/docs/api/structures/shared-texture-imported.md), [import texture info](https://github.com/electron/electron/blob/v44.7.0/docs/api/structures/shared-texture-import-texture-info.md), [handle notes](https://github.com/electron/electron/blob/v44.7.0/docs/api/structures/shared-texture-handle.md), [upstream spec](https://github.com/electron/electron/blob/v44.7.0/spec/api-shared-texture.spec.ts), [WebGPU receiver fixture](https://github.com/electron/electron/blob/v44.7.0/spec/fixtures/api/shared-texture/managed/renderer.js), [Windows keyed-mutex patch](https://github.com/electron/electron/blob/v44.7.0/patches/chromium/osr_shared_texture_remove_keyed_mutex_on_win_dxgi.patch).
+
+**Decision:** do not switch existing normal `WebContentsView` tabs to offscreen capture. A production route would need to create separate offscreen contents, forward input/navigation/permissions, import and release every shared resource correctly, synchronize a WebGPU receiver, present output in the visible browser layout, handle resize/occlusion/device loss/adapter mismatch, and maintain an experimental API through Electron/Chromium upgrades. Windows frame delivery, capture overhead, and visible-output correctness remain untested. A future time-boxed Windows shared-texture prototype may test those exact gates; it must not be reported as live integration until the whole path passes.
+
+## Alternatives evaluated
+
+| Option | Maintenance | Performance | Security / resource boundary | Packaging / decision |
+| --- | --- | --- | --- | --- |
+| **Page/game-owned WebGPU render target** | Uses WebGPU and the FSR1 shader port; no Electron compositor patch | Source runs GPU passes without CPU pixel readback in image processing; adapter, dispatches, numerical comparisons, visible pixels, and timing still require packaged Windows validation | The game owns its texture/queue; sandbox and process isolation remain intact | **Chosen bounded source implementation.** Only the controlled scene or games that explicitly integrate this design. |
+| **Electron experimental offscreen shared texture** | Depends on experimental Electron APIs and Windows-specific lifetime/sync behavior; upstream E2E spec does not validate Windows | May avoid CPU screenshot readback, but capture/import/presentation overhead is unknown | Official handle/VideoFrame path is safer than memory inspection, but frame lifecycle and input forwarding need implementation | **Candidate future prototype, not currently shipped as live integration.** Requires Windows end-to-end and performance gates. |
+| **`capturePage()` PNG + D3D12 helper** | Public, simple app-owned boundary; native helper is separately maintained | CPU readback, PNG encode/decode and upload; unsuitable for continuous real-time processing | Uses Electron screenshot API and app-owned native resources, with exact scene/context validation | **Retained diagnostic only.** Never describe as live, zero-copy or real-time. |
+| **Maintain Chromium/Electron compositor fork** | High ongoing merge/security cost across Electron/Chromium releases | Could place processing in a more appropriate compositor path | Requires deep GPU-process, site-isolation, synchronization and resource-lifetime review | **Not implemented.** Only plausible path to transparent all-page compositor processing without game opt-in. |
+| **Hook arbitrary WebGL/WebGPU pages** | Fragile across workers, OffscreenCanvas, engines, contexts and browser versions | Extra interception/copies; no generic motion/depth access | CSP, isolation, remote-site behavior and native bridge risks | **Rejected.** Not complete or safe general support. |
+| **Desktop capture / graphics-memory access** | OS/hardware-specific | Copies and capture latency | Can expose unrelated or protected content; unsupported cross-process resource access | **Rejected.** No external-process/DRM capture or memory access. |
+| **NVIDIA Streamline/DLSS** | Requires official feature binaries and versioned native integration | Must be measured on the target renderer/hardware | Requires authorized plugin/runtime/signature handling and complete native frame inputs | **Not implemented.** No DLSS substitute or simulated backend. |
+
+## NVIDIA Streamline: DLSS SR and Frame Generation are separate
+
+Official Streamline documentation was inspected on 2026-10-11. Its current README identifies version 2.14.1, states that DLSS/Streamline binary artifacts are obtained from official release ZIPs rather than the repository, says the DLSS-G plugin is prebuilt-only, and recommends production builds with NVIDIA-signed plugin binaries or signature verification. The guide for NGX components says an NVIDIA-provided `applicationId` is required. This inspection does not determine the legal terms for a specific download; those must be checked against the exact release/license before any redistribution.
+
+- **DLSS Super Resolution (SR):** native integration in a game renderer. NVIDIA's guide requires the real D3D12/Vulkan device, adapter support checks, render/output size selection, tagged color input/output/depth/motion-vector/exposure resources, per-frame camera/motion constants, and feature evaluation on a matching frame token/viewport/command list. Chromium does not expose these game inputs for arbitrary tabs.
+- **DLSS Frame Generation (FG/DLSS-G):** a different feature/plugin with its own guide and feature ID. The documented design includes a proxy swap chain/present interception, depth/motion vectors/HUD-less color, per-frame constants and valid resource lifetimes, Reflex/frame-pacing integration, OS/HWS/driver requirements, and signed production plugin checks. The DLSS-G plugin is prebuilt-only. It is not implied by a DLSS-SR mode or GPU vendor detection.
+
+No authorized Streamline/DLSS plugin/runtime, application-ID approval, native game renderer, or NVIDIA hardware test is present. DLSS SR and FG remain **not implemented / not tested**; no proprietary NVIDIA component is bundled.
+
+## AMD FSR1 code and licensing
+
+The official [GPUOpen-Effects/FidelityFX-FSR](https://github.com/GPUOpen-Effects/FidelityFX-FSR) source is pinned at `a21ffb8f6c13233ba336352bdff293894c706575` (FSR 1.0.2). The D3D12 helper retains the upstream shader files, attribution and SHA-256 hashes in `native/fsr1-poc/third_party/amd/UPSTREAM.md`. The WebGPU scene contains a WGSL adaptation of EASU/RCAS with an AMD MIT license notice in the source header. No proprietary AMD runtime/driver binary is bundled.
+
+## Required validation gates
+
+- **Local tests/build:** controller/policy tests, source/CSP tests, `npm test`, `npm run build`, syntax checks, and workflow YAML checks. Passing these does not prove a GPU runtime path.
+- **Windows packaged WebGPU smoke:** require actual WGSL compilation, EASU/RCAS compute-pipeline creation, at least three successful dispatches of each pass, completed output frames, changing scene input, original/EASU/RCAS texture comparisons, screenshot-sample comparison to frozen output, input/output dimensions, adapter/API identity or explicit unknown status, queue-completion wall timing, and saved diagnostic evidence. CPU copies/screenshots occur only after processing and never feed FSR. Physical-GPU field must remain **NOT RUN** in CI. The separate PNG/WARP smoke remains distinctly labeled diagnostic.
+- **Physical GPU:** run on a named real Windows adapter; report adapter model/vendor/driver, API, input/output resolutions, processed frames, captures, and measured timings. No physical GPU has been tested for this source change.
+- **General-page support:** remain blocked until a supported Chromium rendering/interop boundary passes Windows synchronization, resource-lifetime, visible output, security, resize/occlusion, upgrade and performance tests.
+- **DLSS:** require the exact official release/license review, NVIDIA-provided app ID, production signed runtime authorization, separate SR/FG design and compatible physical hardware before packaging or claims.

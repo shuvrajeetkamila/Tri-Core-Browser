@@ -67,10 +67,10 @@ jobs:
           $stderr = Join-Path $env:RUNNER_TEMP 'tricore-smoke.stderr.txt'
           $smokeLog = Join-Path $env:RUNNER_TEMP 'tricore-smoke-main.log.txt'
           if (Test-Path $smokeLog) { Remove-Item $smokeLog -Force }
-          $fsrSmokeOut = Join-Path $env:RUNNER_TEMP 'tricore-fsr-browser-frame-smoke'
+          $fsrSmokeOut = Join-Path $env:RUNNER_TEMP 'tricore-fsr-integration-smoke'
           if (Test-Path $fsrSmokeOut) { Remove-Item $fsrSmokeOut -Recurse -Force }
           New-Item -ItemType Directory -Path $fsrSmokeOut -Force | Out-Null
-          $env:TRICORE_REQUIRE_FSR_BROWSER_SMOKE = 'PASS'
+          $env:TRICORE_REQUIRE_FSR_INTEGRATION_SMOKE = 'PASS'
           $env:TRICORE_FSR_SMOKE_OUT = $fsrSmokeOut
           $env:TRICORE_SMOKE_LOG = $smokeLog
           try {
@@ -87,7 +87,8 @@ jobs:
           Add-Content -Path $smokeLog -Value "[workflow] Packaged process exit code: $($process.ExitCode)" -Encoding utf8
           if ($process.ExitCode -ne 0) { throw "Packaged browser smoke test exited with $($process.ExitCode)." }
           $smokeText = if (Test-Path $smokeLog) { Get-Content $smokeLog -Raw } else { '' }
-          if (-not $smokeText.Contains('[smoke] Real WebContentsView WebGL2 capture')) { throw 'Packaged smoke log does not contain browser-frame capture-to-FSR evidence.' }
+          if (-not $smokeText.Contains('[smoke] Active-core immersive fullscreen: PASS') -or -not $smokeText.Contains('[smoke] Immersive fullscreen exit: PASS')) { throw 'Packaged smoke log does not contain successful immersive fullscreen enter/exit and layout-restoration evidence.' }
+          if (-not $smokeText.Contains('[smoke] Diagnostic-only WebContentsView WebGL2 capture')) { throw 'Packaged smoke log does not contain the diagnostic-only capturePage PNG → FSR1 evidence.' }
           $summaryPath = Join-Path $fsrSmokeOut 'browser-frame-smoke-summary.json'
           if (-not (Test-Path $summaryPath -PathType Leaf)) { throw 'Browser-frame FSR smoke report was not produced.' }
           $summary = Get-Content $summaryPath -Raw | ConvertFrom-Json
@@ -106,13 +107,36 @@ jobs:
             }
           }
           if (@($referencePaths | Sort-Object -Unique).Count -ne 3) { throw 'The three frames must retain three distinct bilinear-reference PNG paths.' }
-          $releaseEvidence = Join-Path $PWD 'release/fsr1-browser-frame-smoke'
+          if (-not $smokeText.Contains('[smoke] Live WebGPU game target')) { throw 'Packaged smoke log does not contain live WebGPU FSR1 visible-output evidence.' }
+          $webGpuSummaryPath = Join-Path $fsrSmokeOut 'fsr1-webgpu-summary.json'
+          if (-not (Test-Path $webGpuSummaryPath -PathType Leaf)) { throw 'Live WebGPU FSR1 summary was not produced.' }
+          $webGpuSummary = Get-Content $webGpuSummaryPath -Raw | ConvertFrom-Json
+          if ($webGpuSummary.status -ne 'PASS' -or $webGpuSummary.api -ne 'WebGPU' -or $webGpuSummary.readbackForProcessing -ne $false -or $webGpuSummary.physicalGpuValidation -ne 'NOT RUN' -or $webGpuSummary.processedFrames -lt 3) { throw 'Live WebGPU FSR1 summary does not validate three processed frames, readback-free processing, and honest physical-GPU status.' }
+          if ($webGpuSummary.input.width -le 0 -or $webGpuSummary.input.height -le 0 -or $webGpuSummary.input.width -ge $webGpuSummary.output.width -or $webGpuSummary.input.height -ge $webGpuSummary.output.height) { throw 'Live WebGPU FSR1 must report a smaller game render target and larger visible output.' }
+          if ($webGpuSummary.lifecycle.adapterDetected -ne $true -or $webGpuSummary.lifecycle.shaderCompilationStatus -ne 'passed' -or $webGpuSummary.lifecycle.pipelineCreationStatus -ne 'passed' -or $webGpuSummary.lifecycle.resourceInitializationStatus -ne 'passed' -or $webGpuSummary.lifecycle.easuComputePipelineInitialized -ne $true -or $webGpuSummary.lifecycle.rcasComputePipelineInitialized -ne $true -or $webGpuSummary.lifecycle.presentationPipelineInitialized -ne $true -or $webGpuSummary.lifecycle.outputSubmittedToVisibleCanvas -ne $true) { throw 'Live WebGPU FSR1 must report adapter detection, successful shaders/resources, EASU/RCAS compute and presentation pipeline initialization, and output submission.' }
+          if ($webGpuSummary.dispatch.easuDispatches -lt 3 -or $webGpuSummary.dispatch.rcasDispatches -lt 3) { throw 'Live WebGPU FSR1 must report at least three dispatches for both EASU and RCAS.' }
+          if ($webGpuSummary.imageValidation.status -ne 'PASS' -or $webGpuSummary.imageValidation.readbackFeedsProcessing -ne $false -or $webGpuSummary.imageValidation.motion.changed -ne $true -or $webGpuSummary.imageValidation.stageComparison.status -ne 'PASS' -or $webGpuSummary.imageValidation.visibleCanvas.status -ne 'PASS' -or $webGpuSummary.lifecycle.visibleCanvasScreenshotCompared -ne $true -or $webGpuSummary.lifecycle.visibleOutputVerified -ne $true) { throw 'Live WebGPU FSR1 numerical stage, motion, or post-processing visible-canvas screenshot comparison failed or is missing.' }
+          if ($webGpuSummary.imageValidation.stageComparison.checks.dimensionsUpscaled -ne $true -or $webGpuSummary.imageValidation.stageComparison.checks.inputHasDetail -ne $true -or $webGpuSummary.imageValidation.stageComparison.checks.easuContributes -ne $true -or $webGpuSummary.imageValidation.stageComparison.checks.rcasContributes -ne $true -or $webGpuSummary.imageValidation.stageComparison.checks.outputHasDetail -ne $true) { throw 'Live WebGPU FSR1 stage comparison is missing one or more numerical contribution checks.' }
+          if (-not $webGpuSummary.timingDefinition.Contains('not a GPU timestamp')) { throw 'Live WebGPU timings must be identified as queue-completion wall time, not GPU timestamps.' }
+          foreach ($captureName in @('lowResolutionInput', 'easuIntermediate', 'rcasOutput')) {
+            $stageCapture = $webGpuSummary.imageValidation.captures.$captureName
+            if (-not $stageCapture -or -not (Test-Path $stageCapture.path -PathType Leaf)) { throw "Post-processing WebGPU stage capture is missing: $captureName" }
+            $stageCaptureBytes = [System.IO.File]::ReadAllBytes($stageCapture.path)
+            if ($stageCaptureBytes.Length -lt 80 -or $stageCaptureBytes[0] -ne 137 -or $stageCaptureBytes[1] -ne 80 -or $stageCaptureBytes[2] -ne 78 -or $stageCaptureBytes[3] -ne 71) { throw "Post-processing WebGPU stage capture is not a non-empty PNG: $captureName" }
+            if ((Get-FileHash -Path $stageCapture.path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $stageCapture.sha256.ToLowerInvariant()) { throw "Post-processing WebGPU stage capture SHA-256 does not match: $captureName" }
+          }
+          $visibleCapture = $webGpuSummary.visibleOutputCapture
+          if (-not $visibleCapture -or -not (Test-Path $visibleCapture.path -PathType Leaf)) { throw 'Post-processing visible WebGPU output capture is missing.' }
+          $visibleCaptureBytes = [System.IO.File]::ReadAllBytes($visibleCapture.path)
+          if ($visibleCaptureBytes.Length -lt 80 -or $visibleCaptureBytes[0] -ne 137 -or $visibleCaptureBytes[1] -ne 80 -or $visibleCaptureBytes[2] -ne 78 -or $visibleCaptureBytes[3] -ne 71) { throw 'Post-processing visible WebGPU output capture is not a non-empty PNG.' }
+          if ((Get-FileHash -Path $visibleCapture.path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $visibleCapture.sha256.ToLowerInvariant()) { throw 'Post-processing visible WebGPU output capture SHA-256 does not match.' }
+          $releaseEvidence = Join-Path $PWD 'release/fsr1-integration-smoke'
           if (Test-Path $releaseEvidence) { Remove-Item $releaseEvidence -Recurse -Force }
           Copy-Item $fsrSmokeOut $releaseEvidence -Recurse -Force
           Add-Content -Path $env:GITHUB_ENV -Value 'TRICORE_SMOKE_TEST=PASS' -Encoding utf8
-          Add-Content -Path $env:GITHUB_ENV -Value 'TRICORE_FSR_BROWSER_SMOKE=PASS' -Encoding utf8
+          Add-Content -Path $env:GITHUB_ENV -Value 'TRICORE_FSR_INTEGRATION_SMOKE=PASS' -Encoding utf8
           Add-Content -Path $env:GITHUB_ENV -Value "TRICORE_FSR_SMOKE_OUT=$fsrSmokeOut" -Encoding utf8
-          Write-Host "PASS: $($exeItem.Length) byte Windows x64 portable executable; 3 distinct changing WebContentsView capturePage PNG frames at 3 resolutions processed by the FSR1 D3D12 helper on WARP; physical-GPU validation remains NOT RUN."
+          Write-Host "PASS: $($exeItem.Length) byte Windows x64 portable executable; screenshot diagnostic: 3 changing capturePage PNG frames at 3 resolutions processed by the FSR1 D3D12 helper on WARP; live integration: at least 3 readback-free WebGPU game-target frames displayed through the visible canvas; physical-GPU validation remains NOT RUN."
           } catch {
             $workflowFailure = "[workflow] Packaged smoke validation failed at line $($_.InvocationInfo.ScriptLineNumber): $($_.Exception.Message)`n$($_.ScriptStackTrace)"
             try { Add-Content -Path $smokeLog -Value $workflowFailure -Encoding utf8 } catch {}
@@ -128,7 +152,10 @@ jobs:
             'tricore-smoke-main.log.txt',
             'tricore-smoke.stdout.txt',
             'tricore-smoke.stderr.txt',
-            'tricore-fsr-browser-frame-smoke/browser-frame-smoke-summary.json'
+            'tricore-fsr-integration-smoke/browser-frame-smoke-summary.json',
+            'tricore-fsr-integration-smoke/fsr1-webgpu-summary.json',
+            'tricore-fsr-integration-smoke/packaged-smoke-failure-summary.json',
+            'tricore-fsr-integration-smoke/fsr1-webgpu-visible-output.png'
           )
           $diagnosticLines = [System.Collections.Generic.List[string]]::new()
           $diagnosticLines.Add('# Packaged browser smoke diagnostics')
@@ -139,9 +166,15 @@ jobs:
             $diagnosticLines.Add('')
             $diagnosticLines.Add('```text')
             if (Test-Path $logPath -PathType Leaf) {
-              $tail = @(Get-Content -Path $logPath -Tail 80)
-              if ($tail.Count -eq 0) { $diagnosticLines.Add('[file exists but is empty]') }
-              else { foreach ($line in $tail) { $diagnosticLines.Add([string]$line) } }
+              if ($logPath.EndsWith('.png', [System.StringComparison]::OrdinalIgnoreCase)) {
+                $pngItem = Get-Item -LiteralPath $logPath
+                $pngHash = (Get-FileHash -LiteralPath $logPath -Algorithm SHA256).Hash.ToLowerInvariant()
+                $diagnosticLines.Add("PNG evidence: $($pngItem.Length) bytes · SHA-256 $pngHash")
+              } else {
+                $tail = @(Get-Content -Path $logPath -Tail 80)
+                if ($tail.Count -eq 0) { $diagnosticLines.Add('[file exists but is empty]') }
+                else { foreach ($line in $tail) { $diagnosticLines.Add([string]$line) } }
+              }
             } else {
               $diagnosticLines.Add('[file was not produced]')
             }
@@ -166,7 +199,7 @@ jobs:
             ${{ runner.temp }}/tricore-smoke.stdout.txt
             ${{ runner.temp }}/tricore-smoke.stderr.txt
             ${{ runner.temp }}/tricore-smoke-diagnostics.md
-            ${{ runner.temp }}/tricore-fsr-browser-frame-smoke/**
+            ${{ runner.temp }}/tricore-fsr-integration-smoke/**
           if-no-files-found: ignore
           retention-days: 7
       - name: Assemble portable distribution and reports
@@ -192,7 +225,7 @@ jobs:
             release/BUILD_REPORT.txt
             release/SIZE_AUDIT.txt
             release/SHA256SUMS.txt
-            release/fsr1-browser-frame-smoke/**
+            release/fsr1-integration-smoke/**
             dependency-audit.json
             dependency-tree.json
           if-no-files-found: error
@@ -251,9 +284,9 @@ jobs:
 
           This prerelease contains the tested portable Windows x64 Electron/Chromium browser and its supporting documentation. It loads real websites and includes an executed WebAssembly diagnostic.
 
-          **FSR1 scope:** the package includes a manual diagnostic for the bundled animated WebGL2 scene only. It captures actual `WebContentsView` frames through Electron `capturePage()` PNG, processes them in a separate D3D12 helper on software WARP, and returns a PNG preview. This is CPU readback/upload, not zero-copy, real-time, arbitrary-page, or physical-GPU evidence; physical-GPU validation remains NOT RUN.
+          **FSR1 scope:** the package includes a game-owned WebGPU vertical slice for the bundled scene: a lower-resolution browser-owned GPU target is processed by AMD FSR1 EASU + RCAS WGSL passes and displayed through the visible canvas without CPU readback in the processing path. It does not intercept other pages. A separate manual `capturePage()` PNG → D3D12 helper test is diagnostic-only and uses WARP software. Physical-GPU validation remains NOT RUN; timings are not FPS claims.
 
-          **DLSS is not implemented.** Ordinary web pages continue to render in standard Chromium; no general upscaling or performance improvement is claimed. The package is unsigned. Review `BUILD_REPORT.txt`, `SIZE_AUDIT.txt`, `SHA256SUMS.txt`, and the included smoke captures/reports.
+          **DLSS is not implemented.** Ordinary web pages continue to render in standard Chromium; no arbitrary-page support or performance improvement is claimed. The package is unsigned. Review `BUILD_REPORT.txt`, `SIZE_AUDIT.txt`, `SHA256SUMS.txt`, and the included smoke captures/reports.
           EOF
           gh --version
           gh release create "$RELEASE_TAG" \

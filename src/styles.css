@@ -487,3 +487,64 @@ h1 span { color: #8b96a9; font-weight: 500; }
   .performance-fsr-controls > button { flex: 1 1 100%; }
   .performance-fsr-preview-grid { grid-template-columns: 1fr; }
 }
+
+/* Accessible controls and immersive full-screen styling. */
+button, input, select { font: inherit; }
+button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible, summary:focus-visible { outline: 3px solid #91a7ff; outline-offset: 2px; }
+[hidden] { display: none !important; }
+
+.immersive-toggle { min-width: 126px; min-height: 44px; padding: 0 14px; border-color: #192238; background: #192238; color: #fff; font-size: 12px; font-weight: 750; box-shadow: 0 5px 13px rgba(25,34,56,.17); }
+.immersive-toggle:hover { border-color: #26344f; background: #26344f; color: #fff; }
+.immersive-toggle svg { width: 20px; height: 20px; stroke-width: 1.8; }
+.immersive-toggle[aria-pressed="true"] { border-color: #277f72; background: #277f72; }
+.immersive-exitbar { position: relative; z-index: 3; display: flex; min-width: 0; height: 46px; flex: 0 0 46px; align-items: center; gap: 14px; padding: 0 18px; background: rgba(12,17,27,.96); color: #e8edf5; box-shadow: 0 5px 18px rgba(0,0,0,.18); }
+.immersive-exitbar[hidden] { display: none !important; }
+.immersive-core-label { overflow: hidden; color: #fff; font-size: 10px; font-weight: 800; letter-spacing: .12em; text-overflow: ellipsis; white-space: nowrap; }
+.immersive-exit-hint { margin-right: auto; color: #9ca9bc; font-size: 10px; }
+.immersive-exit-button { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; gap: 8px; padding: 0 10px; border: 1px solid rgba(255,255,255,.19); border-radius: 8px; background: rgba(255,255,255,.08); color: #f7f9fc; cursor: pointer; font-size: 10px; font-weight: 700; }
+.immersive-exit-button:hover { border-color: rgba(255,255,255,.35); background: rgba(255,255,255,.14); }
+.immersive-exit-button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.immersive-exit-button kbd { padding: 2px 4px; border: 1px solid rgba(255,255,255,.18); border-radius: 4px; color: #c7d0de; font: 700 8px 'DM Sans Variable', sans-serif; }
+
+/* The live WebGPU scene and the separate PNG diagnostic are distinct cards. */
+.mode-icon-wasm { background: #eef6ff; color: #4e83bc; }
+.performance-priority { justify-content: flex-end; min-width: 180px; min-height: 52px; padding: 7px 10px; border: 1px solid #e8ecf2; border-radius: 8px; background: #fbfcfd; }
+.performance-priority strong { color: #5b6780; font-size: 11px; }
+.performance-fsr-lab { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; margin-top: 12px; }
+.performance-fsr-live, .performance-fsr-capture { min-width: 0; padding: 14px; border: 1px solid #e6eaf0; border-radius: 11px; background: linear-gradient(155deg,#fff,#fbfcfd); }
+.performance-fsr-lab-heading { align-items: center; }
+.performance-fsr-live > p, .performance-fsr-capture > p { color: #78859a; font-size: 9px; line-height: 1.55; }
+.performance-fsr-status { margin: 9px 0 0; }
+.performance-fsr-metrics-detail { margin: 9px 0 0; padding: 8px 9px; border-radius: 7px; background: #f7f9fb; color: #758197; font-size: 9px; line-height: 1.5; overflow-wrap: anywhere; }
+.performance-fsr-preview-grid { margin-top: 8px; }
+.performance-fsr-preview-grid figure { min-width: 0; }
+.performance-fsr-preview-grid figcaption { min-height: 24px; color: #78859a; font-size: 8px; line-height: 1.35; }
+.performance-fsr-preview-grid img { max-height: 155px; }
+.settings-input { width: min(100%,480px); height: 35px; padding: 0 10px; border: 1px solid #dfe5ed; border-radius: 7px; background: #fff; color: #455168; font-size: 10px; }
+
+@media (max-width: 1120px) {
+  .immersive-toggle { min-width: 106px; padding: 0 9px; }
+}
+@media (max-width: 900px) {
+  .performance-fsr-lab { grid-template-columns: minmax(0,1fr); }
+}
+@media (max-width: 560px) {
+  .immersive-toggle { min-width: 44px; width: 44px; height: 44px; padding: 0; }
+  .immersive-toggle-label { display: none; }
+  .immersive-exitbar { height: 44px; flex-basis: 44px; gap: 8px; padding: 0 9px; }
+  .immersive-exit-hint { display: none; }
+  .immersive-exit-button { min-height: 32px; gap: 5px; padding: 0 7px; font-size: 9px; }
+}
+
+/* In OS fullscreen, one chosen browser core fills the window and a labelled
+   exit strip stays outside the WebContentsView's bounds. */
+html.is-immersive, html.is-immersive body { width: 100%; height: 100%; min-height: 0; overflow: hidden; background: #080c14; }
+body.is-immersive .app-shell { display: flex; width: 100%; height: 100vh; min-height: 0; flex-direction: column; overflow: hidden; background: #080c14; }
+body.is-immersive .topbar, body.is-immersive #performance-panel, body.is-immersive .workspace-footer { display: none !important; }
+body.is-immersive .immersive-exitbar { display: flex; }
+body.is-immersive .main-content { display: flex; width: 100%; height: auto; min-height: 0; flex: 1 1 auto; flex-direction: column; margin: 0; padding: 0; overflow: hidden; }
+body.is-immersive .browser-grid { width: 100%; height: auto; min-height: 0; flex: 1 1 auto; grid-template-columns: minmax(0,1fr); gap: 0; margin: 0; overflow: hidden; }
+body.is-immersive .browser-pane { min-height: 0; border: 0; border-radius: 0; box-shadow: none; }
+body.is-immersive .pane-heading, body.is-immersive .pane-tabbar, body.is-immersive .pane-toolbar, body.is-immersive .pane-footer { display: none !important; }
+body.is-immersive .pane-viewport { min-height: 0; flex: 1 1 auto; background: #080c14; }
+body.is-immersive .toast { display: none !important; }

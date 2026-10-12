@@ -2,23 +2,25 @@
 
 A standalone Windows desktop browser built on Electron's bundled Chromium runtime. Three independent browser cores let you compare pages side by side; each core supports its own tabs, navigation history, bookmarks, downloads, and profile storage.
 
-> **Honest graphics status (CI for app/source commit `eee56b7`, 2026-10-11):** The packaged Windows smoke validated three changing frames of TRI-CORE’s bundled WebGL2 scene at three capture resolutions: Electron `capturePage()` PNG → AMD FSR 1.0.2 EASU + RCAS in a separate D3D12 helper on WARP software → PNG/report validation. The portable Windows artifact assembled and uploaded successfully ([Actions run 38149140832](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38149140832)). This is a bounded screenshot/readback preview, not zero-copy, real-time, arbitrary-page upscaling, or performance evidence. Physical-GPU validation is not run. DLSS remains unavailable, ordinary pages keep standard Chromium rendering, and no performance gain is claimed.
+> **Honest graphics status (2026-10-12):** Source implements a bounded, game-owned WebGPU FSR1 EASU + RCAS path for the bundled test scene, with image processing intended to stay on GPU and a separate visible-canvas presentation pass. The current-source packaged Windows runtime gate has **NOT RUN**; do not treat source presence, parser acceptance, unit tests, or a renderer build as proof of shader compilation, dispatch, or correct visible pixels. The separate `capturePage()` PNG → native D3D12 helper remains diagnostic only. A prior source commit's screenshot diagnostic passed on WARP software ([Actions run 38149140832](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38149140832)); this is not evidence for the new WebGPU scene or a physical GPU. Physical-GPU validation is **NOT RUN**. Ordinary pages remain standard Chromium; no general support or performance gain is claimed. DLSS remains unavailable. See the [FSR1 WebGPU acceptance ledger](docs/FSR1_WEBGPU_ACCEPTANCE_LEDGER.md) for gate results.
 
 ## What works today
 
 - A native Windows desktop application with a Chromium rendering engine bundled in the application; Chrome or Edge does not need to be installed separately.
 - Three live, side-by-side browser cores. Each has an address/search bar, Back, Forward, Reload, Stop, Home, and up to 20 tabs.
+- A prominent **Full screen** button expands the active core into an immersive OS-fullscreen window and hides the browser controls; **Exit full screen** or **F11** restores the previous three-core/focused layout.
 - HTTPS navigation with Chromium's normal certificate validation. Address/search text accepts HTTP(S) URLs, host names, and DuckDuckGo searches; non-web protocols are never navigated as pages.
 - Persistent, separate cookie and website-storage partitions for each core (tabs inside the same core share that core's session).
 - Local bookmarks and basic history, a session downloads panel, and a configurable home page.
 - Sandboxed web contents, context isolation, no Node.js access in remote pages, and site permissions denied by default.
 - A controlled WebAssembly module that is compiled and executed by Chromium/V8, checks `add(19, 23) = 42`, and measures repeatable WASM call throughput.
 - GPU/Chromium diagnostics, including Electron's reported GPU information and a WebGPU adapter probe when exposed by the system.
+- A source-implemented, controlled opt-in WebGPU game scene with its own render target and AMD FSR1 EASU + RCAS compute path; packaged Windows shader/pipeline/dispatch and visible-pixel validation is pending, and ordinary pages are not intercepted.
 - Honest WASM, DLSS, FSR, Hybrid, and Standard mode state with safe fallback behavior.
 
 ## Windows download and launch
 
-**Release status:** the tested portable build for app/source commit `eee56b7` is available as the `TriCoreBrowser-Windows-x64` Actions artifact in [run 38149140832](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38149140832) (30-day artifact retention). No new public GitHub Release has been published; existing Releases predate this build.
+**Prior artifact (not this source revision):** a portable build for app/source commit `eee56b7` is available as the `TriCoreBrowser-Windows-x64` Actions artifact in [run 38149140832](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38149140832) (30-day artifact retention). That build predates the new WebGPU FSR1 scene and does not validate it. The current-source Windows packaged test is pending; no new public GitHub Release has been published.
 
 1. Open the linked Actions run and download the `TriCoreBrowser-Windows-x64` artifact.
 2. Extract the Actions artifact, then optionally extract `TriCoreBrowser-Windows-x64-portable.zip`.
@@ -34,11 +36,15 @@ Open **Modes** in the top toolbar.
 | --- | --- | --- |
 | **WASM MODE** | Compiles and runs the project's small WebAssembly test inside Chromium/V8. | Implemented; test result and timing are shown. It does not upscale pages or promise higher frame rates. |
 | **NVIDIA DLSS MODE** | Requests a native DLSS rendering path. | **Not integrated.** The controller reports why and falls back to standard Chromium. An NVIDIA GPU/driver alone is not enough. |
-| **AMD FSR MODE** | Selects the status for the limited FSR1 diagnostic; it does not replace normal page rendering. In the advanced panel, a user may opt in to capture the bundled WebGL2 test scene as a PNG, process it through the native AMD FSR1 EASU + RCAS D3D12 helper, and view a returned preview. | The packaged three-frame/three-resolution capture-to-FSR path passed on WARP software in CI. This validates only the controlled diagnostic scene, not a physical GPU or arbitrary webpage. It is not an in-compositor, zero-copy, or real-time upscaler. Standard Chromium remains active for regular pages. |
-| **HYBRID MODE** | Applies the automatic native-backend priority only when a compatible, initialized renderer integration is proven. | DLSS is unavailable and the FSR capture helper is manual-only, so normal pages safely stay on standard Chromium; WASM remains a separate runtime diagnostic. |
+| **AMD FSR MODE** | The advanced panel exposes two clearly separated paths: (1) source for an opt-in bundled WebGPU game scene with its own lower-resolution target, EASU/RCAS compute passes, and visible-canvas presentation; and (2) a screenshot/readback diagnostic using Electron `capturePage()` PNG → a separate native D3D12 helper. | The source-level WebGPU vertical slice has **not** passed current-source packaged Windows runtime validation; shader/pipeline creation, actual dispatch, numerical GPU output, and screenshot-visible output remain unverified. Image processing is designed without CPU pixel readback; diagnostics copy pixels only after processing. The path is limited to the controlled scene (or a game integrating its own render path). The old PNG path is diagnostic only; its previous WARP CI pass is software evidence, not live integration. Ordinary pages remain standard Chromium. |
+| **HYBRID MODE** | Applies automatic priority only to a compatible, initialized integration that is eligible for the current rendering scope. | DLSS is unavailable; the controlled FSR game scene is intentionally excluded from automatic selection for ordinary tabs. Normal pages stay on Chromium; WASM remains a separate runtime diagnostic. |
 | **STANDARD MODE** | Uses the normal Chromium renderer; Chromium/the driver chooses hardware or software compositing. | Implemented and active by default. |
 
 The advanced panel distinguishes Chromium's GPU/WebGPU capability information from actual DLSS/FSR integration. Read [Graphics integration status](docs/GRAPHICS_INTEGRATION.md) before interpreting the controls.
+
+### Immersive full-screen gaming view
+
+Select or focus the browser core you want to use, then press the large **Full screen** button in the top toolbar. The app enters OS fullscreen, expands that core's live browser view, and hides the settings, mode panel, tabs, address bar, and other app chrome. A small **Exit full screen** control remains at the top so the mode stays reversible; **F11** also toggles it. Exiting restores the prior three-core or single-core layout. This changes window/layout presentation only—it does not change a page's graphics API, add an upscaler, or promise better performance.
 
 ## Build from source
 
@@ -65,7 +71,7 @@ The GitHub Actions workflow builds on a Windows runner, tests the packaged appli
 
 ## Feature maturity and limitations
 
-This is an early, compact browser product built on Electron's bundled Chromium, not a custom Chromium fork. It loads real websites but is not a feature-complete replacement for a major browser. Chromium `WebContentsView` does not provide arbitrary websites' per-frame color/depth/motion-vector resources or a supported native swap-chain bridge. The FSR diagnostic is deliberately limited to the bundled scene and screenshot/readback preview; it does not upscale ordinary webpages, external apps, WebGPU games, video, DRM, or cloud streams. No NVIDIA Streamline/DLSS integration or physical-GPU validation is included. See [Known limitations](docs/KNOWN_LIMITATIONS.md).
+This is an early, compact browser product built on Electron's bundled Chromium, not a custom Chromium fork. It loads real websites but is not a feature-complete replacement for a major browser. The WebGPU FSR1 vertical slice is game-owned and only processes the bundled scene (or a game that explicitly integrates its own WebGPU target); it does not intercept normal DOM pages or third-party games. Electron's experimental offscreen shared-texture API was investigated but has not been proven end-to-end on Windows or integrated into visible tabs. The separate `capturePage()` PNG path remains a screenshot/readback diagnostic only. Arbitrary page/compositor, video/DRM, cloud-stream and external-app upscaling are unsupported. DLSS is not integrated and physical-GPU validation is **NOT RUN**. See [Known limitations](docs/KNOWN_LIMITATIONS.md).
 
 ## Project documents
 
@@ -77,6 +83,7 @@ This is an early, compact browser product built on Electron's bundled Chromium, 
 - [Native FSR1 harness and reproducing the PNG path](native/fsr1-poc/README.md)
 - [Implementation plan and acceptance gates](docs/GAMING_UPSCALING_IMPLEMENTATION_PLAN.md)
 - [Test results](docs/TEST_RESULTS.md)
+- [FSR1 WebGPU acceptance ledger](docs/FSR1_WEBGPU_ACCEPTANCE_LEDGER.md)
 - [Known limitations](docs/KNOWN_LIMITATIONS.md)
 - [Licensing and redistribution audit](docs/LICENSE_COMPLIANCE.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.txt)

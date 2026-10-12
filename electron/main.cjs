@@ -25,6 +25,11 @@ const {
   validateCaptureDimensions,
   validateNativeFsrReport,
 } = require('./fsr1-bridge.cjs');
+const {
+  analyzeRgbaStages,
+  bitmapToRgba,
+  compareVisibleCanvasSamples,
+} = require('./fsr1-webgpu-validation.cjs');
 
 const CORE_COUNT = 3;
 const MAX_TABS_PER_CORE = 20;
@@ -34,9 +39,15 @@ const DEFAULT_HOME_URL = 'https://duckduckgo.com/';
 const WEB_PROTOCOLS = new Set(['http:', 'https:']);
 const FSR_TEST_SCENE_PATH = path.join(__dirname, '..', 'app', 'diagnostics', 'fsr1-browser-game.html');
 const FSR_TEST_SCENE_URL = pathToFileURL(FSR_TEST_SCENE_PATH).href;
+const FSR_WEBGPU_TEST_SCENE_PATH = path.join(__dirname, '..', 'app', 'diagnostics', 'fsr1-webgpu.html');
+const FSR_WEBGPU_TEST_SCENE_URL = pathToFileURL(FSR_WEBGPU_TEST_SCENE_PATH).href;
 
 function isBundledFsrTestSceneUrl(value) {
   return isFileUrlForPath(String(value || ''), FSR_TEST_SCENE_PATH);
+}
+
+function isBundledFsrWebGpuTestSceneUrl(value) {
+  return isFileUrlForPath(String(value || ''), FSR_WEBGPU_TEST_SCENE_PATH);
 }
 
 const MAX_FSR_PREVIEW_BYTES = 12 * 1024 * 1024;
@@ -169,6 +180,7 @@ function tabState(tab) {
     canGoForward: contents.canGoForward(),
     error: tab.error,
     fsrTestScene: Boolean(tab.isFsrTestScene && isBundledFsrTestSceneUrl(contents.getURL())),
+    fsrWebGpuTestScene: Boolean(tab.isFsrWebGpuTestScene && isBundledFsrWebGpuTestSceneUrl(contents.getURL())),
   };
 }
 
@@ -199,6 +211,21 @@ function sendDownloads() {
     path: state === 'completed' ? filePath : '',
     error,
   })));
+}
+
+function setMainWindowFullscreen(enabled) {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  mainWindow.setFullScreen(Boolean(enabled));
+  const fullScreen = mainWindow.isFullScreen();
+  if (!mainWindow.webContents.isDestroyed()) mainWindow.webContents.send('browser:fullscreen-state', fullScreen);
+  return fullScreen;
+}
+
+function handleFullscreenShortcut(event, input) {
+  if (input?.type !== 'keyDown' || input.key !== 'F11' || input.isAutoRepeat || input.control || input.meta || input.alt) return false;
+  event.preventDefault();
+  setMainWindowFullscreen(!mainWindow?.isFullScreen?.());
+  return true;
 }
 
 function applyLayoutForCore(slot) {
@@ -305,6 +332,7 @@ function loadTab(tab, rawUrl) {
   if (!tab || !url || tab.view.webContents.isDestroyed()) return Promise.resolve(false);
   tab.error = '';
   tab.isFsrTestScene = false;
+  tab.isFsrWebGpuTestScene = false;
   sendState(tab.slot);
   return tab.view.webContents.loadURL(url).then(() => true).catch((error) => {
     if (!tab.view.webContents.isDestroyed()) {
@@ -318,12 +346,29 @@ function loadTab(tab, rawUrl) {
 function loadFsrTestScene(tab) {
   if (!tab || !tab.view || tab.view.webContents.isDestroyed()) return Promise.resolve(false);
   tab.isFsrTestScene = true;
+  tab.isFsrWebGpuTestScene = false;
   tab.error = '';
   sendState(tab.slot);
   return tab.view.webContents.loadFile(FSR_TEST_SCENE_PATH).then(() => true).catch((error) => {
     tab.isFsrTestScene = false;
     if (!tab.view.webContents.isDestroyed()) {
-      tab.error = clampText(error?.message || 'The local WebGL2 test scene could not be loaded.', 500);
+      tab.error = clampText(error?.message || 'The local WebGL2 screenshot-diagnostic scene could not be loaded.', 500);
+      sendState(tab.slot);
+    }
+    return false;
+  });
+}
+
+function loadFsrWebGpuTestScene(tab) {
+  if (!tab || !tab.view || tab.view.webContents.isDestroyed()) return Promise.resolve(false);
+  tab.isFsrTestScene = false;
+  tab.isFsrWebGpuTestScene = true;
+  tab.error = '';
+  sendState(tab.slot);
+  return tab.view.webContents.loadFile(FSR_WEBGPU_TEST_SCENE_PATH).then(() => true).catch((error) => {
+    tab.isFsrWebGpuTestScene = false;
+    if (!tab.view.webContents.isDestroyed()) {
+      tab.error = clampText(error?.message || 'The local WebGPU FSR1 integration scene could not be loaded.', 500);
       sendState(tab.slot);
     }
     return false;
@@ -364,6 +409,7 @@ function makeWebContentsView(slot, tab) {
     else if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('browser:active', slot);
   });
   contents.on('before-input-event', (event, input) => {
+    if (handleFullscreenShortcut(event, input)) return;
     if (input.type !== 'keyDown' || !(input.control || input.meta) || input.alt) return;
     const key = String(input.key || '').toLowerCase();
     let shortcut = null;
@@ -387,11 +433,14 @@ function makeWebContentsView(slot, tab) {
     return { action: 'deny' };
   });
   contents.on('will-navigate', (event, url) => {
-    const isApprovedDiagnosticNavigation = tab.isFsrTestScene && isBundledFsrTestSceneUrl(url);
+    const isApprovedDiagnosticNavigation = (tab.isFsrTestScene && isBundledFsrTestSceneUrl(url))
+      || (tab.isFsrWebGpuTestScene && isBundledFsrWebGpuTestSceneUrl(url));
     if (!safeWebUrl(url) && !isApprovedDiagnosticNavigation) event.preventDefault();
   });
   contents.on('will-redirect', (event, url) => {
-    if (!safeWebUrl(url)) event.preventDefault();
+    const isApprovedDiagnosticNavigation = (tab.isFsrTestScene && isBundledFsrTestSceneUrl(url))
+      || (tab.isFsrWebGpuTestScene && isBundledFsrWebGpuTestSceneUrl(url));
+    if (!safeWebUrl(url) && !isApprovedDiagnosticNavigation) event.preventDefault();
   });
   contents.on('did-start-loading', () => {
     tab.error = '';
@@ -436,10 +485,10 @@ function makeWebContentsView(slot, tab) {
   return view;
 }
 
-function createTab(slot, rawUrl = homeUrl, { activate = true, fsrTestScene = false } = {}) {
+function createTab(slot, rawUrl = homeUrl, { activate = true, fsrTestScene = false, fsrWebGpuTestScene = false } = {}) {
   if (validSlot(slot) < 0 || !mainWindow || mainWindow.isDestroyed()) return null;
   if (coreTabs[slot].length >= MAX_TABS_PER_CORE) return null;
-  const tab = { id: crypto.randomUUID(), slot, view: null, error: '', isFsrTestScene: false };
+  const tab = { id: crypto.randomUUID(), slot, view: null, error: '', isFsrTestScene: false, isFsrWebGpuTestScene: false };
   makeWebContentsView(slot, tab);
   coreTabs[slot].push(tab);
   if (activate || !activeTabs[slot]) {
@@ -448,7 +497,11 @@ function createTab(slot, rawUrl = homeUrl, { activate = true, fsrTestScene = fal
   } else {
     tab.view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
   }
-  const loadPromise = fsrTestScene ? loadFsrTestScene(tab) : loadTab(tab, rawUrl);
+  const loadPromise = fsrTestScene
+    ? loadFsrTestScene(tab)
+    : fsrWebGpuTestScene
+      ? loadFsrWebGpuTestScene(tab)
+      : loadTab(tab, rawUrl);
   sendState(slot);
   tab.loadPromise = loadPromise;
   return tab;
@@ -507,6 +560,14 @@ function createWindow() {
     if (!process.argv.includes('--smoke-test')) mainWindow.show();
   });
   mainWindow.on('closed', () => { mainWindow = null; });
+  const sendFullscreenState = () => {
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+      mainWindow.webContents.send('browser:fullscreen-state', mainWindow.isFullScreen());
+    }
+  };
+  mainWindow.on('enter-full-screen', sendFullscreenState);
+  mainWindow.on('leave-full-screen', sendFullscreenState);
+  mainWindow.webContents.on('before-input-event', (event, input) => handleFullscreenShortcut(event, input));
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     const safeUrl = safeWebUrl(url);
     if (safeUrl) shell.openExternal(safeUrl).catch(() => {});
@@ -925,6 +986,25 @@ function getGPUFeatureStatus() {
   }
 }
 
+async function getFsrWebGpuSceneSnapshots() {
+  const activeScenes = activeTabs.map((tab, slot) => ({ tab, slot })).filter(({ tab }) => (
+    tab?.isFsrWebGpuTestScene
+    && tab.view
+    && !tab.view.webContents.isDestroyed()
+    && isBundledFsrWebGpuTestSceneUrl(tab.view.webContents.getURL())
+  ));
+  return Promise.all(activeScenes.map(async ({ tab, slot }) => {
+    try {
+      const snapshot = await tab.view.webContents.executeJavaScript('window.triCoreFsrWebGpuTest && window.triCoreFsrWebGpuTest.getSnapshot()');
+      return snapshot && typeof snapshot === 'object'
+        ? { ...snapshot, slot, tabId: tab.id }
+        : { slot, tabId: tab.id, state: 'not-initialized', detected: false, compatible: false, initialized: false, failed: false, error: 'The bundled WebGPU test page has not published its status.' };
+    } catch (error) {
+      return { slot, tabId: tab.id, state: 'status-query-failed', failureStage: 'status-query', detected: false, compatible: false, initialized: false, failed: true, error: clampText(error?.message || 'WebGPU test page status query failed.', 300) };
+    }
+  }));
+}
+
 async function getGraphicsDiagnostics() {
   let gpuInfo = {};
   let gpuInfoError = '';
@@ -951,44 +1031,78 @@ async function getGraphicsDiagnostics() {
     angle: clampText(gpuInfo?.gl?.angle || '', 180),
     vulkan: clampText(gpuInfo?.vulkan?.version || gpuInfo?.vulkan?.status || '', 120),
   };
-  const nativeFsrAdapters = await getNativeFsrAdapters();
+  const [nativeFsrAdapters, fsrWebGpuScenes] = await Promise.all([
+    getNativeFsrAdapters(),
+    getFsrWebGpuSceneSnapshots(),
+  ]);
   const compatibleAdapters = nativeFsrAdapters.adapters.filter((adapter) => !adapter.softwareAdapter && adapter.fsr1Compatible);
   const helperExists = Boolean(nativeFsrExecutablePath());
+  const fsrWebGpuScene = [...fsrWebGpuScenes].sort((left, right) => Number(right.processingFrames) - Number(left.processingFrames))[0] || null;
   const adapterApiStatus = !helperExists
-    ? 'NOT AVAILABLE: bundled D3D12 FSR1 helper is not built or packaged.'
+    ? 'The separate D3D12 screenshot-diagnostic helper is not built or packaged.'
     : !nativeFsrAdapters.available
-      ? `D3D12 adapter query failed: ${nativeFsrAdapters.error}`
-      : `${nativeFsrAdapters.adapters.length} non-software D3D12 adapter(s) enumerated; ${compatibleAdapters.length} report the FSR1 format/shader feature set. Actual page/compositor resource access is not exposed.`;
-  const fsrReason = lastFsrFailure
-    ? `Most recent native processing attempt failed: ${lastFsrFailure}`
-    : !helperExists
-      ? 'The D3D12 FSR1 helper is not built/packaged for this platform.'
-      : !nativeFsrAdapters.available
-        ? nativeFsrAdapters.error
-        : compatibleAdapters.length
-          ? 'D3D12 FSR1 feature set is available for an explicit, bundled-WebGL2 test-scene capture only. Arbitrary webpages and the Chromium compositor are not connected.'
-          : 'The helper and FSR1 shader are present, but no non-software D3D12 adapter reports the required FSR1 features. WARP is software-only and is not a hardware fallback.';
+      ? `D3D12 diagnostic-adapter query failed: ${nativeFsrAdapters.error}`
+      : `${nativeFsrAdapters.adapters.length} non-software D3D12 adapter(s) enumerated; ${compatibleAdapters.length} report the helper's FSR1 feature set. This is separate from the WebGPU game integration.`;
+  const fsrReason = fsrWebGpuScene?.failed
+    ? `The controlled WebGPU FSR1 scene failed during ${fsrWebGpuScene.failureStage || fsrWebGpuScene.state || 'runtime processing'}: ${fsrWebGpuScene.error || 'unknown WebGPU error'}. Standard Chromium rendering remains available.`
+    : fsrWebGpuScene?.unsupported
+      ? `WebGPU is unavailable for the controlled scene: ${fsrWebGpuScene.error || 'no compatible adapter was returned'}. Standard Chromium rendering remains available.`
+      : fsrWebGpuScene?.processingFrames
+        ? `The bundled WebGPU scene has completed ${Number(fsrWebGpuScene.framesCompleted) || 0} EASU + RCAS compute-dispatch frame(s) and submitted the output to its visible canvas. This is a game-owned integration example only; ordinary pages are not intercepted.`
+        : fsrWebGpuScene?.initialized
+          ? 'The EASU/RCAS compute and presentation pipelines are initialized, but no completed output frame is confirmed yet.'
+          : 'Open the opt-in bundled WebGPU FSR1 scene to test the game-owned render-target path. Ordinary pages remain on standard Chromium.';
+  const adapterDescription = fsrWebGpuScene?.adapter
+    ? [fsrWebGpuScene.adapter.vendor, fsrWebGpuScene.adapter.device, fsrWebGpuScene.adapter.description].filter(Boolean).join(' · ')
+    : '';
+  const webGpuHardwareCompatibility = !fsrWebGpuScene
+    ? 'WebGPU FSR1 scene not initialized; physical adapter compatibility NOT RUN.'
+    : fsrWebGpuScene.softwareAdapter === true
+      ? `${adapterDescription || 'WebGPU adapter identity reported'} · software adapter; not physical-GPU evidence.`
+      : fsrWebGpuScene.softwareAdapter === false
+        ? `${adapterDescription || 'WebGPU adapter identity reported'} · adapter identified as non-software; physical-GPU validation still requires a manual run.`
+        : `${adapterDescription || 'WebGPU adapter initialized; identity not exposed'} · software/physical classification unknown; physical-GPU validation NOT RUN.`;
   const fsrFeature = {
-    implemented: helperExists,
-    detected: helperExists,
-    compatible: compatibleAdapters.length > 0,
-    initialized: Boolean(activeFsrJob?.nativeInitialized),
-    active: Boolean(activeFsrJob?.nativeProcessing),
-    processingFrames: Boolean(activeFsrJob?.nativeProcessing),
-    processedFrames: totalFsrProcessedFrames,
-    failed: Boolean(lastFsrFailure),
-    error: lastFsrFailure,
-    unsupported: !helperExists || (nativeFsrAdapters.available && compatibleAdapters.length === 0),
+    implemented: fs.existsSync(FSR_WEBGPU_TEST_SCENE_PATH),
+    detected: Boolean(fsrWebGpuScene?.detected),
+    adapterDetected: fsrWebGpuScene?.adapterDetected === true,
+    state: String(fsrWebGpuScene?.state || (fsrWebGpuScene?.detected ? 'detected' : 'not-run')),
+    failureStage: clampText(fsrWebGpuScene?.failureStage || '', 80),
+    shaderCompilationStatus: String(fsrWebGpuScene?.shaderCompilationStatus || 'NOT RUN'),
+    pipelineCreationStatus: String(fsrWebGpuScene?.pipelineCreationStatus || 'NOT RUN'),
+    resourceInitializationStatus: String(fsrWebGpuScene?.resourceInitializationStatus || 'NOT RUN'),
+    easuDispatches: Number.isSafeInteger(fsrWebGpuScene?.easuDispatches) ? fsrWebGpuScene.easuDispatches : 0,
+    rcasDispatches: Number.isSafeInteger(fsrWebGpuScene?.rcasDispatches) ? fsrWebGpuScene.rcasDispatches : 0,
+    framesPresented: Number.isSafeInteger(fsrWebGpuScene?.framesPresented) ? fsrWebGpuScene.framesPresented : 0,
+    presentedOutput: fsrWebGpuScene?.presentedOutput === true,
+    visibleOutputVerified: fsrWebGpuScene?.visibleOutputVerified === true,
+    timestampQuerySupported: fsrWebGpuScene?.timestampQuerySupported === true,
+    gpuTimestampsAvailable: fsrWebGpuScene?.gpuTimestampsAvailable === true,
+    lastEasuGpuTimeMs: Number.isFinite(fsrWebGpuScene?.lastEasuGpuTimeMs) ? fsrWebGpuScene.lastEasuGpuTimeMs : null,
+    lastRcasGpuTimeMs: Number.isFinite(fsrWebGpuScene?.lastRcasGpuTimeMs) ? fsrWebGpuScene.lastRcasGpuTimeMs : null,
+    compatible: fsrWebGpuScene?.compatible === true,
+    initialized: fsrWebGpuScene?.initialized === true,
+    active: fsrWebGpuScene?.active === true,
+    processingFrames: fsrWebGpuScene?.processingFrames === true,
+    processedFrames: Number.isSafeInteger(fsrWebGpuScene?.framesCompleted) ? fsrWebGpuScene.framesCompleted : 0,
+    queueCompletionWallMs: Number.isFinite(fsrWebGpuScene?.lastQueueCompletionWallMs) ? fsrWebGpuScene.lastQueueCompletionWallMs : null,
+    averageQueueCompletionWallMs: Number.isFinite(fsrWebGpuScene?.averageQueueCompletionWallMs) ? fsrWebGpuScene.averageQueueCompletionWallMs : null,
+    maxQueueCompletionWallMs: Number.isFinite(fsrWebGpuScene?.maxQueueCompletionWallMs) ? fsrWebGpuScene.maxQueueCompletionWallMs : null,
+    inputWidth: Number.isSafeInteger(fsrWebGpuScene?.inputWidth) ? fsrWebGpuScene.inputWidth : null,
+    inputHeight: Number.isSafeInteger(fsrWebGpuScene?.inputHeight) ? fsrWebGpuScene.inputHeight : null,
+    outputWidth: Number.isSafeInteger(fsrWebGpuScene?.outputWidth) ? fsrWebGpuScene.outputWidth : null,
+    outputHeight: Number.isSafeInteger(fsrWebGpuScene?.outputHeight) ? fsrWebGpuScene.outputHeight : null,
+    failed: fsrWebGpuScene?.failed === true,
+    deviceLost: fsrWebGpuScene?.deviceLost === true,
+    error: clampText(fsrWebGpuScene?.error || '', 500),
+    unsupported: fsrWebGpuScene?.unsupported === true,
     automaticEligible: false,
-    hardwareCompatibility: compatibleAdapters.length
-      ? `${compatibleAdapters.length} non-software D3D12 adapter(s) report required FSR1 features; shader initialization/frame processing is not implied.`
-      : nativeFsrAdapters.warpAvailable
-        ? 'No FSR-compatible hardware adapter reported; WARP is software-only.'
-        : 'No FSR-compatible hardware adapter reported.',
+    hardwareCompatibility: webGpuHardwareCompatibility,
     reason: fsrReason,
-    backend: 'WebContentsView capturePage PNG CPU readback → separate app-owned D3D12 FSR1 EASU + RCAS helper → diagnostic preview; no compositor hook or shared texture',
-    scope: 'Manual, opt-in processing of the bundled animated WebGL2 test scene only; not an arbitrary-page or real-time page upscaler.',
+    backend: 'Controlled WebGPU game color target → AMD FidelityFX FSR1 EASU compute → RCAS compute → visible-canvas presentation; no CPU readback for processing. Explicit post-run validation may copy textures for diagnostics only.',
+    scope: 'Opt-in bundled WebGPU game scene only. No arbitrary-page/compositor interception; automatic mode deliberately does not apply this scene-specific integration to ordinary tabs.',
     adapterApiStatus,
+    webGpuScenes: fsrWebGpuScenes,
   };
   return {
     appVersion: app.getVersion(),
@@ -1001,6 +1115,7 @@ async function getGraphicsDiagnostics() {
     graphicsApiDetails,
     featureStatus,
     nativeFsrAdapters,
+    fsrWebGpuScenes,
     lastFsrReport: lastFsrReport ? {
       adapter: clampText(lastFsrReport.adapter || '', 180),
       adapterVendorId: clampText(lastFsrReport.adapterVendorId || '', 24),
@@ -1070,15 +1185,115 @@ function waitForNavigation(contents, url, timeoutMs = 25_000) {
   });
 }
 
+function compactWebGpuOutputEvidence(validation) {
+  if (!validation || typeof validation !== 'object') return null;
+  return {
+    state: validation.state || '',
+    purpose: validation.purpose || '',
+    readbackForProcessing: validation.readbackForProcessing,
+    diagnosticReadback: validation.diagnosticReadback === true,
+    framesSubmittedAtCapture: Number.isSafeInteger(validation.framesSubmittedAtCapture) ? validation.framesSubmittedAtCapture : null,
+    framesCompletedAtCapture: Number.isSafeInteger(validation.framesCompletedAtCapture) ? validation.framesCompletedAtCapture : null,
+    input: validation.input || null,
+    easu: validation.easu || null,
+    rcas: validation.rcas || null,
+    dispatch: validation.dispatch || null,
+    visibleSampleCount: Array.isArray(validation.visibleSamples) ? validation.visibleSamples.length : 0,
+  };
+}
+
+function collectSmokeArtifactInventory(root, limit = 160) {
+  const inventory = [];
+  if (!root || !fs.existsSync(root)) return inventory;
+  const pending = [{ absolutePath: root, relativePath: '', depth: 0 }];
+  while (pending.length && inventory.length < limit) {
+    const directory = pending.shift();
+    let entries;
+    try {
+      entries = fs.readdirSync(directory.absolutePath, { withFileTypes: true });
+    } catch (error) {
+      inventory.push({ path: directory.relativePath || '.', type: 'unreadable-directory', error: clampText(error?.message || error, 300) });
+      continue;
+    }
+    for (const entry of entries) {
+      if (inventory.length >= limit) break;
+      const relativePath = path.posix.join(directory.relativePath.replaceAll(path.sep, '/'), entry.name);
+      const absolutePath = path.join(directory.absolutePath, entry.name);
+      if (entry.isSymbolicLink()) {
+        inventory.push({ path: relativePath, type: 'symbolic-link-not-followed' });
+      } else if (entry.isDirectory()) {
+        inventory.push({ path: relativePath, type: 'directory' });
+        if (directory.depth < 3) pending.push({ absolutePath, relativePath, depth: directory.depth + 1 });
+      } else if (entry.isFile()) {
+        try {
+          const stat = fs.statSync(absolutePath);
+          const artifact = { path: relativePath, type: 'file', bytes: stat.size };
+          if (stat.size <= 64 * 1024 * 1024) {
+            artifact.sha256 = crypto.createHash('sha256').update(fs.readFileSync(absolutePath)).digest('hex');
+          } else {
+            artifact.sha256 = 'NOT COMPUTED: file exceeds the 64 MiB failure-inventory limit';
+          }
+          inventory.push(artifact);
+        } catch (error) {
+          inventory.push({ path: relativePath, type: 'unreadable-file', error: clampText(error?.message || error, 300) });
+        }
+      }
+    }
+  }
+  if (pending.length || inventory.length >= limit) inventory.push({ truncated: true, maximumEntries: limit });
+  return inventory;
+}
+
+function saveWebGpuDiagnosticPng(outputPath, dataUrl, label, expectedWidth, expectedHeight) {
+  const match = /^data:image\/png;base64,([A-Za-z0-9+/]+={0,2})$/.exec(String(dataUrl || ''));
+  if (!match) throw new Error(`${label} post-processing diagnostic is not a base64 PNG data URL.`);
+  const bytes = Buffer.from(match[1], 'base64');
+  if (bytes.length < 80 || bytes.length > 32 * 1024 * 1024
+      || bytes[0] !== 137 || bytes[1] !== 80 || bytes[2] !== 78 || bytes[3] !== 71) {
+    throw new Error(`${label} post-processing diagnostic PNG is empty, malformed, or exceeds the 32 MiB safety limit.`);
+  }
+  const image = nativeImage.createFromBuffer(bytes);
+  if (image.isEmpty()) throw new Error(`${label} diagnostic PNG could not be decoded by Electron.`);
+  const dimensions = image.getSize();
+  if (dimensions.width !== expectedWidth || dimensions.height !== expectedHeight) {
+    throw new Error(`${label} diagnostic image dimensions ${dimensions.width}×${dimensions.height} differ from expected ${expectedWidth}×${expectedHeight}.`);
+  }
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  fs.writeFileSync(outputPath, bytes, { mode: 0o600 });
+  return {
+    path: outputPath,
+    format: 'PNG',
+    width: dimensions.width,
+    height: dimensions.height,
+    bytes: bytes.length,
+    sha256: crypto.createHash('sha256').update(bytes).digest('hex'),
+    purpose: 'Post-processing diagnostic capture only; not used as an FSR input.',
+  };
+}
+
 async function runSmokeTest() {
   const startedAt = Date.now();
   let localServer;
+  let smokeStage = 'startup';
+  let webGpuSmokeStarted = false;
+  let webGpuSnapshot = null;
+  const webGpuEvidence = {
+    firstOutputValidation: null,
+    outputValidation: null,
+    stageAnalysis: null,
+    motionCheck: null,
+    diagnosticCaptures: null,
+    visibleCanvasComparison: null,
+    visibleCapturePath: '',
+    summaryPath: '',
+  };
   try {
     if (!mainWindow || mainWindow.isDestroyed()) throw new Error('Main window did not start.');
-    if (process.env.TRICORE_REQUIRE_FSR_BROWSER_SMOKE === 'PASS') {
+    if (process.env.TRICORE_REQUIRE_FSR_INTEGRATION_SMOKE === 'PASS') {
       mainWindow.show();
       mainWindow.focus();
     }
+    smokeStage = 'browser-shell-and-ui';
     writeSmokeDiagnostic(`[smoke] Runtime versions: Electron ${process.versions.electron}; Chromium ${process.versions.chrome}; Node.js ${process.versions.node}.`);
     const initialGraphicsDiagnostics = await getGraphicsDiagnostics();
     writeSmokeDiagnostic(`[smoke] Electron GPU devices: ${JSON.stringify(initialGraphicsDiagnostics.gpuDevices)}; Chromium graphics implementation details: ${JSON.stringify(initialGraphicsDiagnostics.graphicsApiDetails)}; D3D12 adapters: ${JSON.stringify(initialGraphicsDiagnostics.nativeFsrAdapters)}`);
@@ -1089,13 +1304,66 @@ async function runSmokeTest() {
       wasm: Boolean(document.querySelector('[data-graphics-mode="wasm"]')),
       dlss: Boolean(document.querySelector('[data-graphics-mode="dlss"]')),
       fsr: Boolean(document.querySelector('[data-graphics-mode="fsr"]')),
+      fsrWebGpuIntegration: Boolean(document.querySelector('#fsr-open-webgpu-test-scene')),
+      fsrPngDiagnostic: Boolean(document.querySelector('#fsr-open-test-scene')),
       hybrid: Boolean(document.querySelector('[data-graphics-mode="hybrid"]')),
       standard: Boolean(document.querySelector('[data-graphics-mode="standard"]')),
-      tabs: Boolean(document.querySelector('[data-tabbar="0"]'))
+      tabs: Boolean(document.querySelector('[data-tabbar="0"]')),
+      immersiveToggle: Boolean(document.querySelector('#immersive-toggle')),
+      immersiveExit: Boolean(document.querySelector('#immersive-exit'))
     })`);
     if (Object.values(uiControls).some((value) => !value)) throw new Error(`A required browser control is missing: ${JSON.stringify(uiControls)}`);
-    writeSmokeDiagnostic(`[smoke] Browser shell and five mode controls: PASS ${JSON.stringify(uiControls)}`);
+    writeSmokeDiagnostic(`[smoke] Browser shell, five mode controls, and immersive fullscreen controls: PASS ${JSON.stringify(uiControls)}`);
 
+    if (process.env.TRICORE_REQUIRE_FSR_INTEGRATION_SMOKE === 'PASS') {
+      smokeStage = 'immersive-fullscreen-toggle';
+      await mainWindow.webContents.executeJavaScript("document.querySelector('#immersive-toggle').click()");
+      let immersiveReady = false;
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        const uiState = await mainWindow.webContents.executeJavaScript(`({
+          immersive: document.body.classList.contains('is-immersive'),
+          exitVisible: !document.querySelector('#immersive-exitbar').hidden
+            && document.querySelector('#immersive-exit').getClientRects().length > 0,
+          appChromeHidden: ['.topbar', '#performance-panel', '.pane-heading', '.pane-tabbar', '.pane-toolbar', '.pane-footer']
+            .every((selector) => getComputedStyle(document.querySelector(selector)).display === 'none'),
+          exitStripBottom: document.querySelector('#immersive-exitbar').getBoundingClientRect().bottom,
+          selectedCore: document.querySelector('#browser-grid').dataset.focus
+        })`);
+        const bounds = activeTabFor(0)?.view?.getBounds();
+        const content = mainWindow.getContentBounds();
+        if (mainWindow.isFullScreen() && uiState.immersive && uiState.exitVisible && uiState.appChromeHidden && uiState.selectedCore === '0'
+            && bounds?.x <= 4 && bounds?.y >= uiState.exitStripBottom - 1
+            && bounds?.width >= content.width * 0.9 && bounds?.height >= content.height - uiState.exitStripBottom - 10) {
+          immersiveReady = true;
+          break;
+        }
+      }
+      if (!immersiveReady) throw new Error('The immersive button did not expand the active browser core to the fullscreen window while retaining the exit control.');
+      writeSmokeDiagnostic('[smoke] Active-core immersive fullscreen: PASS; operating-system fullscreen entered, other browser controls hidden, selected WebContentsView expanded, and accessible exit button retained.');
+      await mainWindow.webContents.executeJavaScript("document.querySelector('#immersive-exit').click()");
+      let immersiveRestored = false;
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        const uiState = await mainWindow.webContents.executeJavaScript(`({
+          immersive: document.body.classList.contains('is-immersive'),
+          exitHidden: document.querySelector('#immersive-exitbar').hidden,
+          focusedCore: document.querySelector('#browser-grid').dataset.focus || '',
+          allCoresVisible: [...document.querySelectorAll('.browser-pane')].every((pane) => pane.getClientRects().length > 0),
+          browserControlsVisible: getComputedStyle(document.querySelector('.topbar')).display !== 'none'
+            && getComputedStyle(document.querySelector('.pane-toolbar')).display !== 'none'
+        })`);
+        if (!mainWindow.isFullScreen() && !uiState.immersive && uiState.exitHidden && uiState.focusedCore === ''
+            && uiState.allCoresVisible && uiState.browserControlsVisible) {
+          immersiveRestored = true;
+          break;
+        }
+      }
+      if (!immersiveRestored) throw new Error('Exiting immersive fullscreen did not restore the original three-core browser layout.');
+      writeSmokeDiagnostic('[smoke] Immersive fullscreen exit: PASS; window restored and all three cores/browser controls returned.');
+    }
+
+    smokeStage = 'local-http-javascript-wasm';
     localServer = http.createServer((_request, response) => {
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       response.end(`<!doctype html><html><head><title>Tri-Core local smoke</title></head><body><h1>Smoke page</h1><script>
@@ -1123,6 +1391,7 @@ async function runSmokeTest() {
     }
     writeSmokeDiagnostic(`[smoke] Local HTTP website, JavaScript and WebAssembly add(19,23)=42: PASS (${loadedUrl})`);
 
+    smokeStage = 'browser-tab-regression';
     const newTab = createTab(0, testUrl, { activate: true });
     if (!newTab || !(await newTab.loadPromise)) throw new Error('Creating/loading a second browser tab failed.');
     if (stateFor(0).tabs.length !== 2 || stateFor(0).id !== newTab.id) throw new Error('Tab list or active-tab state is incorrect.');
@@ -1137,7 +1406,8 @@ async function runSmokeTest() {
       writeSmokeDiagnostic(`[smoke] HTTPS external-network probe: BLOCKED (${clampText(error?.message, 220)}); no certificate bypass was used.`);
     }
 
-    if (process.env.TRICORE_REQUIRE_FSR_BROWSER_SMOKE === 'PASS') {
+    if (process.env.TRICORE_REQUIRE_FSR_INTEGRATION_SMOKE === 'PASS') {
+      smokeStage = 'capturepage-fsr-diagnostic';
       const sceneTab = createTab(0, homeUrl, { activate: true, fsrTestScene: true });
       if (!sceneTab || !(await sceneTab.loadPromise)) throw new Error('The bundled WebGL2 FSR test scene could not be opened in a real WebContentsView.');
       const contentBounds = mainWindow.getContentBounds();
@@ -1202,14 +1472,332 @@ async function runSmokeTest() {
           nativeReport: frame.nativeReport,
         })),
       }, null, 2)}\n`, { mode: 0o600 });
-      writeSmokeDiagnostic(`[smoke] Real WebContentsView WebGL2 capture → Electron capturePage PNG → AMD FSR 1.0.2 EASU+RCAS D3D12 → PNG validation: PASS; adapter=${fsrResult.frames[0].adapter} (WARP SOFTWARE); frames=${fsrResult.frameCount}; distinct browser input frames=${fsrResult.distinctInputFrames}; distinct capture resolutions=${fsrResult.distinctInputResolutions}; latest ${fsrResult.frames[2].inputWidth}x${fsrResult.frames[2].inputHeight} -> ${fsrResult.frames[2].outputWidth}x${fsrResult.frames[2].outputHeight}; report=${fsrResult.reportPath}; summary=${summaryPath}`);
+      writeSmokeDiagnostic(`[smoke] Diagnostic-only WebContentsView WebGL2 capture → capturePage PNG → AMD FSR1 D3D12 helper on WARP → PNG validation: PASS; adapter=${fsrResult.frames[0].adapter} (WARP SOFTWARE); frames=${fsrResult.frameCount}; distinct browser input frames=${fsrResult.distinctInputFrames}; distinct capture resolutions=${fsrResult.distinctInputResolutions}; latest ${fsrResult.frames[2].inputWidth}x${fsrResult.frames[2].inputHeight} -> ${fsrResult.frames[2].outputWidth}x${fsrResult.frames[2].outputHeight}; report=${fsrResult.reportPath}; summary=${summaryPath}`);
+
+      smokeStage = 'webgpu-scene-load';
+      webGpuSmokeStarted = true;
+      const webGpuSceneTab = createTab(0, homeUrl, { activate: true, fsrWebGpuTestScene: true });
+      if (!webGpuSceneTab || !(await webGpuSceneTab.loadPromise)) throw new Error('The bundled WebGPU FSR1 game-integration scene could not be opened in a real WebContentsView.');
+      if (!layoutBounds[0] || layoutBounds[0].width < 64 || layoutBounds[0].height < 64) {
+        layoutBounds[0] = { x: 0, y: 0, width: Math.max(320, Math.floor(contentBounds.width / 3)), height: Math.max(240, Math.floor(contentBounds.height * 0.7)) };
+        applyLayoutForCore(0);
+      }
+      const webGpuContents = webGpuSceneTab.view.webContents;
+      smokeStage = 'webgpu-pipeline-dispatch-validation';
+      const webGpuDeadline = Date.now() + 60_000;
+      while (Date.now() < webGpuDeadline) {
+        webGpuSnapshot = await webGpuContents.executeJavaScript('window.triCoreFsrWebGpuTest && window.triCoreFsrWebGpuTest.getSnapshot()');
+        if (webGpuSnapshot?.failed || webGpuSnapshot?.unsupported) {
+          throw new Error(`The bundled WebGPU FSR1 scene failed during ${webGpuSnapshot.failureStage || webGpuSnapshot.state}: ${webGpuSnapshot.error || JSON.stringify(webGpuSnapshot)}`);
+        }
+        if (Number(webGpuSnapshot?.framesCompleted) >= 3) break;
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      if (!webGpuSnapshot || Number(webGpuSnapshot.framesCompleted) < 3 || !webGpuSnapshot.processingFrames) {
+        throw new Error(`The WebGPU FSR1 scene did not complete three visible output frames within 60 seconds: ${JSON.stringify(webGpuSnapshot)}`);
+      }
+      if (!(webGpuSnapshot.inputWidth > 0 && webGpuSnapshot.inputHeight > 0
+        && webGpuSnapshot.outputWidth > webGpuSnapshot.inputWidth
+        && webGpuSnapshot.outputHeight > webGpuSnapshot.inputHeight)) {
+        throw new Error(`The WebGPU FSR1 scene did not report a lower-resolution input and larger visible output: ${JSON.stringify(webGpuSnapshot)}`);
+      }
+      if (webGpuSnapshot.shaderCompilationStatus !== 'passed'
+          || webGpuSnapshot.pipelineCreationStatus !== 'passed'
+          || webGpuSnapshot.easuComputePipelineInitialized !== true
+          || webGpuSnapshot.rcasComputePipelineInitialized !== true
+          || webGpuSnapshot.presentationPipelineInitialized !== true
+          || Number(webGpuSnapshot.easuDispatches) < 3
+          || Number(webGpuSnapshot.rcasDispatches) < 3) {
+        throw new Error(`EASU/RCAS compute shader compilation, pipeline creation, or dispatch evidence is incomplete: ${JSON.stringify(webGpuSnapshot)}`);
+      }
+
+      smokeStage = 'webgpu-first-frame-diagnostic-readback';
+      const firstFreeze = await webGpuContents.executeJavaScript('window.triCoreFsrWebGpuTest.freezeAtCompletedFrame()');
+      if (!firstFreeze?.evidenceFrozen) throw new Error(`The first WebGPU output frame could not be frozen for repeatable validation: ${JSON.stringify(firstFreeze)}`);
+      const firstOutputValidation = await webGpuContents.executeJavaScript('window.triCoreFsrWebGpuTest.validateLatestOutput({ includeImages: false })');
+      webGpuEvidence.firstOutputValidation = firstOutputValidation;
+      if (firstOutputValidation?.state !== 'PASS' || firstOutputValidation.readbackForProcessing !== false) {
+        throw new Error(`The first post-processing-only WebGPU output sample failed: ${JSON.stringify(firstOutputValidation)}`);
+      }
+      if (!await webGpuContents.executeJavaScript('window.triCoreFsrWebGpuTest.resumeFrames()')) {
+        throw new Error('The WebGPU game scene could not resume after its first output validation capture.');
+      }
+      smokeStage = 'webgpu-motion-validation';
+      const motionFrameTarget = Number(firstOutputValidation.framesCompletedAtCapture) + 2;
+      const motionDeadline = Date.now() + 15_000;
+      while (Date.now() < motionDeadline) {
+        webGpuSnapshot = await webGpuContents.executeJavaScript('window.triCoreFsrWebGpuTest.getSnapshot()');
+        if (webGpuSnapshot?.failed || webGpuSnapshot?.unsupported) {
+          throw new Error(`The WebGPU device/runtime failed during motion validation at ${webGpuSnapshot.failureStage || webGpuSnapshot.state}: ${webGpuSnapshot.error || JSON.stringify(webGpuSnapshot)}`);
+        }
+        if (Number(webGpuSnapshot?.framesCompleted) >= motionFrameTarget) break;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      if (Number(webGpuSnapshot?.framesCompleted) < motionFrameTarget) {
+        throw new Error(`The WebGPU scene did not render two more frames for motion validation: ${JSON.stringify(webGpuSnapshot)}`);
+      }
+      const secondFreeze = await webGpuContents.executeJavaScript('window.triCoreFsrWebGpuTest.freezeAtCompletedFrame()');
+      if (!secondFreeze?.evidenceFrozen) throw new Error(`The second WebGPU output frame could not be frozen: ${JSON.stringify(secondFreeze)}`);
+      const outputValidation = await webGpuContents.executeJavaScript('window.triCoreFsrWebGpuTest.validateLatestOutput({ includeImages: true })');
+      webGpuEvidence.outputValidation = outputValidation;
+      if (outputValidation?.state !== 'PASS' || outputValidation.readbackForProcessing !== false || outputValidation.diagnosticReadback !== true) {
+        throw new Error(`The frozen WebGPU output did not pass its post-processing-only readback validation: ${JSON.stringify(outputValidation)}`);
+      }
+
+      smokeStage = 'webgpu-stage-comparison-and-capture';
+      const smokeOut = fsrCaptureOutputRoot();
+      const diagnosticPngs = outputValidation.diagnosticImages || {};
+      const diagnosticCaptures = {
+        lowResolutionInput: saveWebGpuDiagnosticPng(
+          path.join(smokeOut, 'fsr1-webgpu-low-resolution-input.png'),
+          diagnosticPngs.input,
+          'Low-resolution game target',
+          webGpuSnapshot.inputWidth,
+          webGpuSnapshot.inputHeight,
+        ),
+        easuIntermediate: saveWebGpuDiagnosticPng(
+          path.join(smokeOut, 'fsr1-webgpu-easu-intermediate.png'),
+          diagnosticPngs.easu,
+          'EASU intermediate',
+          webGpuSnapshot.outputWidth,
+          webGpuSnapshot.outputHeight,
+        ),
+        rcasOutput: saveWebGpuDiagnosticPng(
+          path.join(smokeOut, 'fsr1-webgpu-rcas-output.png'),
+          diagnosticPngs.rcas,
+          'RCAS output texture',
+          webGpuSnapshot.outputWidth,
+          webGpuSnapshot.outputHeight,
+        ),
+      };
+      webGpuEvidence.diagnosticCaptures = diagnosticCaptures;
+      const inputImage = nativeImage.createFromBuffer(fs.readFileSync(diagnosticCaptures.lowResolutionInput.path));
+      const easuImage = nativeImage.createFromBuffer(fs.readFileSync(diagnosticCaptures.easuIntermediate.path));
+      const rcasImage = nativeImage.createFromBuffer(fs.readFileSync(diagnosticCaptures.rcasOutput.path));
+      const inputSize = inputImage.getSize();
+      const easuSize = easuImage.getSize();
+      const rcasSize = rcasImage.getSize();
+      const stageAnalysis = analyzeRgbaStages({
+        input: bitmapToRgba(inputImage.toBitmap({ scaleFactor: 1, colorSpace: 'srgb' }), inputSize.width, inputSize.height),
+        inputWidth: inputSize.width,
+        inputHeight: inputSize.height,
+        easu: bitmapToRgba(easuImage.toBitmap({ scaleFactor: 1, colorSpace: 'srgb' }), easuSize.width, easuSize.height),
+        easuWidth: easuSize.width,
+        easuHeight: easuSize.height,
+        output: bitmapToRgba(rcasImage.toBitmap({ scaleFactor: 1, colorSpace: 'srgb' }), rcasSize.width, rcasSize.height),
+        outputWidth: rcasSize.width,
+        outputHeight: rcasSize.height,
+      });
+      webGpuEvidence.stageAnalysis = stageAnalysis;
+      const motionCheck = {
+        firstFrame: Number(firstOutputValidation.framesCompletedAtCapture),
+        secondFrame: Number(outputValidation.framesCompletedAtCapture),
+        firstInputFingerprintFNV1a32: firstOutputValidation.input?.fnv1a32 || null,
+        secondInputFingerprintFNV1a32: outputValidation.input?.fnv1a32 || null,
+        changed: Boolean(firstOutputValidation.input?.fnv1a32)
+          && Boolean(outputValidation.input?.fnv1a32)
+          && firstOutputValidation.input.fnv1a32 !== outputValidation.input.fnv1a32,
+        fingerprintDefinition: 'FNV-1a 32-bit over the low-resolution RGBA WebGPU texture; equality is used only to detect a changed scene frame, not for security.',
+      };
+      webGpuEvidence.motionCheck = motionCheck;
+
+      const canvasEvidenceInfo = await webGpuContents.executeJavaScript(`(() => {
+        const target = document.getElementById('game-canvas');
+        if (!target) return null;
+        const bounds = target.getBoundingClientRect();
+        return {
+          canvasRect: { x: bounds.left, y: bounds.top, width: bounds.width, height: bounds.height },
+          canvasWidth: target.width,
+          canvasHeight: target.height,
+          devicePixelRatio: window.devicePixelRatio || 1,
+          pageState: document.documentElement.dataset.fsr1State || '',
+        };
+      })()`);
+      if (!canvasEvidenceInfo || canvasEvidenceInfo.canvasWidth !== webGpuSnapshot.outputWidth
+          || canvasEvidenceInfo.canvasHeight !== webGpuSnapshot.outputHeight) {
+        throw new Error(`Visible canvas bounds/dimensions do not match the frozen WebGPU FSR1 output: ${JSON.stringify(canvasEvidenceInfo)}`);
+      }
+
+      smokeStage = 'webgpu-visible-canvas-capture-comparison';
+      // This full-WebContentsView PNG is evidence only and is never an FSR input.
+      const visibleCaptureStarted = process.hrtime.bigint();
+      const visibleImage = await webGpuContents.capturePage();
+      const visibleCapturePageMs = Number(process.hrtime.bigint() - visibleCaptureStarted) / 1e6;
+      if (visibleImage.isEmpty()) throw new Error('The post-processing WebGPU output evidence capture was empty.');
+      const visibleImageBytes = visibleImage.toPNG();
+      if (visibleImageBytes.length < 80 || visibleImageBytes[0] !== 137 || visibleImageBytes[1] !== 80 || visibleImageBytes[2] !== 78 || visibleImageBytes[3] !== 71) {
+        throw new Error('The post-processing WebGPU output evidence capture is not a valid PNG.');
+      }
+      const visibleCapturePath = path.join(smokeOut, 'fsr1-webgpu-visible-output.png');
+      webGpuEvidence.visibleCapturePath = visibleCapturePath;
+      fs.mkdirSync(path.dirname(visibleCapturePath), { recursive: true });
+      fs.writeFileSync(visibleCapturePath, visibleImageBytes, { mode: 0o600 });
+      const visibleCaptureSize = visibleImage.getSize();
+      const visibleCanvasComparison = compareVisibleCanvasSamples({
+        screenshot: visibleImage.toBitmap({ scaleFactor: 1, colorSpace: 'srgb' }),
+        screenshotWidth: visibleCaptureSize.width,
+        screenshotHeight: visibleCaptureSize.height,
+        viewWidth: webGpuSceneTab.view.getBounds().width,
+        viewHeight: webGpuSceneTab.view.getBounds().height,
+        canvasRect: canvasEvidenceInfo.canvasRect,
+        expectedSamples: outputValidation.visibleSamples,
+      });
+      webGpuEvidence.visibleCanvasComparison = visibleCanvasComparison;
+      const presentationConfirmed = visibleCanvasComparison.status === 'PASS'
+        && await webGpuContents.executeJavaScript('window.triCoreFsrWebGpuTest.markVisibleOutputVerified()') === true;
+      const imageValidationPassed = stageAnalysis.status === 'PASS' && motionCheck.changed && presentationConfirmed;
+      smokeStage = 'webgpu-summary-and-assertions';
+      const webGpuSummaryPath = path.join(smokeOut, 'fsr1-webgpu-summary.json');
+      webGpuEvidence.summaryPath = webGpuSummaryPath;
+      const webGpuSummary = {
+        status: imageValidationPassed ? 'PASS' : 'FAIL',
+        integration: 'live game-side WebGPU game target → FSR1 EASU compute dispatch → RCAS compute dispatch → fullscreen presentation pass → visible canvas',
+        api: webGpuSnapshot.api,
+        implementation: webGpuSnapshot.implementation,
+        scope: webGpuSnapshot.scope,
+        physicalGpuValidation: 'NOT RUN',
+        readbackForProcessing: false,
+        postProcessingReadbackForValidation: true,
+        postProcessingReadbackDefinition: outputValidation.purpose,
+        screenshotCapture: 'capturePage PNG after processed canvas presentation; evidence only and never used as an FSR input',
+        adapter: webGpuSnapshot.adapter,
+        adapterInfoAvailable: webGpuSnapshot.adapterInfoAvailable,
+        softwareAdapter: webGpuSnapshot.softwareAdapter,
+        softwareClassification: webGpuSnapshot.softwareAdapter === true ? 'reported software adapter' : webGpuSnapshot.softwareAdapter === false ? 'reported non-software adapter; physical identity not established' : 'unknown',
+        lifecycle: {
+          state: webGpuSnapshot.state,
+          adapterDetected: webGpuSnapshot.adapterDetected === true,
+          shaderCompilationStatus: webGpuSnapshot.shaderCompilationStatus,
+          pipelineCreationStatus: webGpuSnapshot.pipelineCreationStatus,
+          resourceInitializationStatus: webGpuSnapshot.resourceInitializationStatus,
+          easuComputePipelineInitialized: webGpuSnapshot.easuComputePipelineInitialized,
+          rcasComputePipelineInitialized: webGpuSnapshot.rcasComputePipelineInitialized,
+          presentationPipelineInitialized: webGpuSnapshot.presentationPipelineInitialized,
+          outputSubmittedToVisibleCanvas: webGpuSnapshot.presentedOutput,
+          visibleCanvasScreenshotCompared: visibleCanvasComparison.status === 'PASS',
+          visibleOutputVerified: presentationConfirmed,
+        },
+        dispatch: {
+          workgroupSize: webGpuSnapshot.workgroupSize,
+          workgroupsX: webGpuSnapshot.workgroupsX,
+          workgroupsY: webGpuSnapshot.workgroupsY,
+          easuDispatches: webGpuSnapshot.easuDispatches,
+          rcasDispatches: webGpuSnapshot.rcasDispatches,
+        },
+        input: { width: webGpuSnapshot.inputWidth, height: webGpuSnapshot.inputHeight },
+        intermediate: { width: webGpuSnapshot.outputWidth, height: webGpuSnapshot.outputHeight },
+        output: { width: webGpuSnapshot.outputWidth, height: webGpuSnapshot.outputHeight },
+        renderScale: webGpuSnapshot.renderScale,
+        framesSubmitted: webGpuSnapshot.framesSubmitted,
+        processedFrames: webGpuSnapshot.framesCompleted,
+        framesPresented: webGpuSnapshot.framesPresented,
+        timingDefinition: webGpuSnapshot.timingDefinition,
+        lastQueueCompletionWallMs: webGpuSnapshot.lastQueueCompletionWallMs,
+        averageQueueCompletionWallMs: webGpuSnapshot.averageQueueCompletionWallMs,
+        maxQueueCompletionWallMs: webGpuSnapshot.maxQueueCompletionWallMs,
+        gpuTimestamps: {
+          supported: webGpuSnapshot.timestampQuerySupported,
+          available: webGpuSnapshot.gpuTimestampsAvailable,
+          samples: webGpuSnapshot.gpuTimestampSamples,
+          lastEasuGpuTimeMs: webGpuSnapshot.lastEasuGpuTimeMs,
+          lastRcasGpuTimeMs: webGpuSnapshot.lastRcasGpuTimeMs,
+          timingDefinition: webGpuSnapshot.gpuTimingDefinition,
+          error: webGpuSnapshot.gpuTimestampError,
+        },
+        imageValidation: {
+          status: imageValidationPassed ? 'PASS' : 'FAIL',
+          method: 'Freeze two completed game-owned GPU frames, copy textures to MAP_READ buffers solely for diagnostics, compare EASU/RCAS output against each other and a simple CPU bilinear reference, then compare visible-canvas screenshot samples to the frozen RCAS texture.',
+          bitmapFormat: 'Electron NativeImage.toBitmap({ scaleFactor: 1, colorSpace: srgb }) is BGRA on the Windows runner; stage PNG bytes are explicitly converted to RGBA and screenshot sample reads reverse BGRA to RGB.',
+          diagnosticReadback: true,
+          readbackFeedsProcessing: false,
+          motion: motionCheck,
+          stageComparison: stageAnalysis,
+          visibleCanvas: visibleCanvasComparison,
+          captures: diagnosticCaptures,
+          limitations: 'Numerical comparison uses the scene target and a simple bilinear baseline; it is not a bit-for-bit AMD reference shader conformance test or a quality/performance claim.',
+        },
+        visibleOutputCapture: {
+          path: visibleCapturePath,
+          format: 'PNG',
+          width: visibleCaptureSize.width,
+          height: visibleCaptureSize.height,
+          bytes: visibleImageBytes.length,
+          capturePageMs: visibleCapturePageMs,
+          sha256: crypto.createHash('sha256').update(visibleImageBytes).digest('hex'),
+          purpose: 'Post-processing visible WebContentsView screenshot evidence only; never used as FSR input.',
+        },
+        runtime: { electron: process.versions.electron, chromium: process.versions.chrome, node: process.versions.node },
+      };
+      fs.writeFileSync(webGpuSummaryPath, `${JSON.stringify(webGpuSummary, null, 2)}\n`, { mode: 0o600 });
+      writeSmokeDiagnostic(`[smoke] WebGPU shader/pipeline/dispatch evidence: shaders=${webGpuSnapshot.shaderCompilationStatus}; pipelines=${webGpuSnapshot.pipelineCreationStatus}; EASU/RCAS dispatches=${webGpuSnapshot.easuDispatches}/${webGpuSnapshot.rcasDispatches}; workgroups=${webGpuSnapshot.workgroupsX}x${webGpuSnapshot.workgroupsY} at 8x8; frames=${webGpuSnapshot.framesCompleted}; timestamps supported/available/samples=${webGpuSnapshot.timestampQuerySupported}/${webGpuSnapshot.gpuTimestampsAvailable}/${webGpuSnapshot.gpuTimestampSamples}`);
+      writeSmokeDiagnostic(`[smoke] WebGPU numerical output comparison: ${JSON.stringify(webGpuSummary.imageValidation)}`);
+      writeSmokeDiagnostic(`[smoke] Live WebGPU game target → EASU compute → RCAS compute → visible canvas: ${webGpuSummary.status}; adapter=${JSON.stringify(webGpuSnapshot.adapter)}; API=${webGpuSnapshot.api}; softwareAdapter=${webGpuSnapshot.softwareAdapter}; input=${webGpuSnapshot.inputWidth}x${webGpuSnapshot.inputHeight}; output=${webGpuSnapshot.outputWidth}x${webGpuSnapshot.outputHeight}; visible-pixel comparison=${visibleCanvasComparison.status}; last/avg/max queue-completion wall=${webGpuSnapshot.lastQueueCompletionWallMs}/${webGpuSnapshot.averageQueueCompletionWallMs}/${webGpuSnapshot.maxQueueCompletionWallMs} ms; post-process screenshot=${visibleCapturePath}; physical GPU validation=NOT RUN; summary=${webGpuSummaryPath}`);
+      if (!imageValidationPassed) {
+        throw new Error(`WebGPU output/motion/visible-canvas numerical validation failed: ${JSON.stringify(webGpuSummary.imageValidation)}`);
+      }
     } else {
-      writeSmokeDiagnostic('[smoke] Browser-frame FSR capture: NOT RUN (TRICORE_REQUIRE_FSR_BROWSER_SMOKE=PASS was not set).');
+      writeSmokeDiagnostic('[smoke] Browser-frame capturePage PNG → native D3D12 FSR1 diagnostic: NOT RUN (TRICORE_REQUIRE_FSR_INTEGRATION_SMOKE=PASS was not set).');
+      writeSmokeDiagnostic('[smoke] Live WebGPU game-side FSR1 visible-frame integration: NOT RUN (TRICORE_REQUIRE_FSR_INTEGRATION_SMOKE=PASS was not set).');
     }
+    smokeStage = 'complete';
     writeSmokeDiagnostic(`[smoke] Overall local runtime checks: PASS (${Date.now() - startedAt} ms)`);
     app.exit(0);
   } catch (error) {
-    writeSmokeDiagnostic(`[smoke] FAIL: ${error?.stack || error}`, 'error');
+    writeSmokeDiagnostic(`[smoke] FAIL at ${smokeStage}: ${error?.stack || error}`, 'error');
+    try {
+      const smokeOut = fsrCaptureOutputRoot();
+      fs.mkdirSync(smokeOut, { recursive: true });
+      const webGpuSummaryPath = path.join(smokeOut, 'fsr1-webgpu-summary.json');
+      let existingWebGpuSummary = null;
+      if (fs.existsSync(webGpuSummaryPath)) {
+        try { existingWebGpuSummary = JSON.parse(fs.readFileSync(webGpuSummaryPath, 'utf8')); } catch { /* The inventory preserves malformed summary bytes and hash. */ }
+      }
+      const smokeLogPath = process.env.TRICORE_SMOKE_LOG || '';
+      let smokeLogStat = null;
+      try { if (smokeLogPath) smokeLogStat = fs.statSync(smokeLogPath); } catch { /* Preserve the failure summary if the log was moved or unavailable. */ }
+      const failureSummaryPath = path.join(smokeOut, 'packaged-smoke-failure-summary.json');
+      const failureSummary = {
+        status: 'FAIL',
+        failedStage: smokeStage,
+        elapsedMs: Math.max(0, Date.now() - startedAt),
+        webGpuIntegration: {
+          status: !webGpuSmokeStarted ? 'NOT RUN' : existingWebGpuSummary?.status === 'PASS' ? 'PASS RECORDED; A LATER PACKAGED-SMOKE CHECK FAILED' : 'FAIL OR INCOMPLETE',
+          physicalGpuValidation: 'NOT RUN',
+          readbackForProcessing: false,
+          snapshot: webGpuSnapshot,
+          firstFrameDiagnostic: compactWebGpuOutputEvidence(webGpuEvidence.firstOutputValidation),
+          finalDiagnostic: compactWebGpuOutputEvidence(webGpuEvidence.outputValidation),
+          stageComparison: webGpuEvidence.stageAnalysis,
+          motionCheck: webGpuEvidence.motionCheck,
+          diagnosticCaptures: webGpuEvidence.diagnosticCaptures,
+          visibleCanvasComparison: webGpuEvidence.visibleCanvasComparison,
+          visibleCapturePath: webGpuEvidence.visibleCapturePath || null,
+          summaryPath: webGpuEvidence.summaryPath || (fs.existsSync(webGpuSummaryPath) ? webGpuSummaryPath : null),
+          previousSummaryStatus: existingWebGpuSummary?.status || null,
+        },
+        failure: {
+          message: clampText(error?.message || String(error), 2000),
+          code: clampText(error?.code || '', 120),
+          stack: String(error?.stack || '').slice(0, 12000),
+        },
+        evidence: {
+          outputDirectory: smokeOut,
+          smokeLog: {
+            path: smokeLogPath || null,
+            exists: Boolean(smokeLogStat),
+            bytes: smokeLogStat?.size ?? null,
+          },
+          artifactInventory: collectSmokeArtifactInventory(smokeOut),
+          failureSummaryPath,
+        },
+        physicalGpuValidation: 'NOT RUN',
+        runtime: { electron: process.versions.electron, chromium: process.versions.chrome, node: process.versions.node },
+      };
+      fs.writeFileSync(failureSummaryPath, `${JSON.stringify(failureSummary, null, 2)}\n`, { mode: 0o600 });
+      appendSmokeDiagnostic(`[smoke] Structured failure summary with partial evidence: ${failureSummaryPath}`);
+    } catch (reportError) {
+      appendSmokeDiagnostic(`[smoke] Could not write structured packaged-smoke failure summary: ${reportError?.message || reportError}`);
+    }
     app.exit(1);
   } finally {
     if (localServer) localServer.close();
@@ -1219,6 +1807,20 @@ async function runSmokeTest() {
 ipcMain.handle('browser:get-states', (event) => {
   if (!isUiSender(event)) return [];
   return Array.from({ length: CORE_COUNT }, (_, slot) => stateFor(slot));
+});
+
+ipcMain.handle('browser:set-fullscreen', (event, payload = {}) => {
+  if (!isUiSender(event)) return { ok: false, error: 'Untrusted sender.' };
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload) || typeof payload.enabled !== 'boolean') return { ok: false, error: 'Full-screen state must include a boolean.' };
+  const slot = validSlot(payload.slot);
+  if (slot < 0) return { ok: false, error: 'An active browser core is required for fullscreen mode.' };
+  try {
+    const fullScreen = setMainWindowFullscreen(payload.enabled);
+    if (payload.enabled) activeTabFor(slot)?.view?.webContents?.focus();
+    return { ok: true, fullScreen };
+  } catch (error) {
+    return { ok: false, error: clampText(error?.message || 'The browser window rejected full-screen mode.', 300) };
+  }
 });
 
 ipcMain.handle('browser:navigate', (event, payload = {}) => {
@@ -1347,6 +1949,19 @@ ipcMain.handle('browser:fsr-open-test-scene', (event, payload = {}) => {
   if (!tab) return { ok: false, error: `A core can have at most ${MAX_TABS_PER_CORE} tabs.` };
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('browser:active', slot);
   return { ok: true, tabId: tab.id };
+});
+ipcMain.handle('browser:fsr-open-webgpu-test-scene', (event, payload = {}) => {
+  if (!isUiSender(event)) return { ok: false, error: 'Untrusted sender.' };
+  const slot = validSlot(payload.slot);
+  if (slot < 0) return { ok: false, error: 'Invalid browser core.' };
+  const tab = createTab(slot, homeUrl, { activate: true, fsrWebGpuTestScene: true });
+  if (!tab) return { ok: false, error: `A core can have at most ${MAX_TABS_PER_CORE} tabs.` };
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('browser:active', slot);
+  return { ok: true, tabId: tab.id };
+});
+ipcMain.handle('browser:fsr-webgpu-test-status', async (event) => {
+  if (!isUiSender(event)) return [];
+  return getFsrWebGpuSceneSnapshots();
 });
 ipcMain.handle('browser:fsr-process-test-scene', async (event, payload = {}) => {
   if (!isUiSender(event)) return { ok: false, error: 'Untrusted sender.' };

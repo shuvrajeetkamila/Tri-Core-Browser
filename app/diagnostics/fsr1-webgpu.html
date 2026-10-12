@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none';">
+  <title>TRI-CORE FSR1 WebGPU game integration test</title>
+  <link rel="stylesheet" href="fsr1-webgpu.css">
+  <script defer src="fsr1-webgpu.js"></script>
+</head>
+<body>
+  <header class="game-header">
+    <div>
+      <span class="eyebrow">OPT-IN GAME-SIDE INTEGRATION TEST</span>
+      <h1>Orbital Runner · WebGPU</h1>
+    </div>
+    <div class="render-badge"><span class="status-dot" id="status-dot"></span><span id="renderer-status">Starting WebGPU…</span></div>
+  </header>
+  <main>
+    <canvas id="game-canvas" aria-label="Animated WebGPU game scene upscaled by AMD FidelityFX FSR 1 EASU and RCAS"></canvas>
+    <div class="game-hud" aria-live="polite">
+      <div><span class="hud-label">QUEUE-COMPLETED FRAMES</span><strong id="frame-count">0</strong></div>
+      <div><span class="hud-label">RENDER TARGET</span><strong id="resolution-label">Waiting for adapter</strong></div>
+      <div><span class="hud-label">PIPELINE</span><strong id="pipeline-label">FSR1 EASU → RCAS</strong></div>
+    </div>
+    <div id="scene-error" class="scene-error" hidden></div>
+  </main>
+  <footer>
+    <span>WebGPU game color target → AMD FSR 1.0.2 EASU + RCAS → visible WebGPU canvas</span>
+    <span>No readback feeds processing · diagnostic copies are post-processing only · other pages remain standard Chromium</span>
+  </footer>
+</body>
+</html>

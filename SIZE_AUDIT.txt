@@ -1,4 +1,6 @@
-TRI-CORE BROWSER — SIZE AUDIT STATUS
+TRI-CORE BROWSER — HISTORICAL SIZE AUDIT (NOT CURRENT SOURCE)
+
+This audit records the packaged artifact for the older app/source commit below only. It does not report sizes for the current source revision.
 
 Report date (UTC): 2026-10-11
 App/source commit with successful Windows CI: eee56b78a5259429b4e5d7be3b73adf21ec99365

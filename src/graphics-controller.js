@@ -51,6 +51,9 @@ function lifecycle(evidence = {}) {
     : 0;
   const gpuTimeMs = Number.isFinite(evidence.gpuTimeMs) && evidence.gpuTimeMs >= 0 ? evidence.gpuTimeMs : null;
   const cpuTimeMs = Number.isFinite(evidence.cpuTimeMs) && evidence.cpuTimeMs >= 0 ? evidence.cpuTimeMs : null;
+  const queueCompletionWallMs = Number.isFinite(evidence.queueCompletionWallMs) && evidence.queueCompletionWallMs >= 0 ? evidence.queueCompletionWallMs : null;
+  const averageQueueCompletionWallMs = Number.isFinite(evidence.averageQueueCompletionWallMs) && evidence.averageQueueCompletionWallMs >= 0 ? evidence.averageQueueCompletionWallMs : null;
+  const maxQueueCompletionWallMs = Number.isFinite(evidence.maxQueueCompletionWallMs) && evidence.maxQueueCompletionWallMs >= 0 ? evidence.maxQueueCompletionWallMs : null;
   const inputWidth = Number.isSafeInteger(evidence.inputWidth) && evidence.inputWidth > 0 ? evidence.inputWidth : null;
   const inputHeight = Number.isSafeInteger(evidence.inputHeight) && evidence.inputHeight > 0 ? evidence.inputHeight : null;
   const outputWidth = Number.isSafeInteger(evidence.outputWidth) && evidence.outputWidth > 0 ? evidence.outputWidth : null;
@@ -77,12 +80,17 @@ function lifecycle(evidence = {}) {
     processedFrames,
     gpuTimeMs,
     cpuTimeMs,
+    queueCompletionWallMs,
+    averageQueueCompletionWallMs,
+    maxQueueCompletionWallMs,
     inputWidth,
     inputHeight,
     outputWidth,
     outputHeight,
     failed,
     unsupported,
+    deviceLost: evidence.deviceLost === true,
+    failureStage: String(evidence.failureStage || ''),
     state,
     error: String(evidence.error ?? ''),
   });
@@ -99,11 +107,16 @@ function createUnavailableUpscaler(id, gpuDetected, integration = {}) {
     processedFrames: integration?.processedFrames,
     gpuTimeMs: integration?.gpuTimeMs,
     cpuTimeMs: integration?.cpuTimeMs,
+    queueCompletionWallMs: integration?.queueCompletionWallMs,
+    averageQueueCompletionWallMs: integration?.averageQueueCompletionWallMs,
+    maxQueueCompletionWallMs: integration?.maxQueueCompletionWallMs,
     inputWidth: integration?.inputWidth,
     inputHeight: integration?.inputHeight,
     outputWidth: integration?.outputWidth,
     outputHeight: integration?.outputHeight,
     failed: integration?.failed === true,
+    deviceLost: integration?.deviceLost === true,
+    failureStage: integration?.failureStage,
     error: integration?.error,
     unsupported: integration?.unsupported === true || !implemented,
   });
@@ -183,8 +196,12 @@ export function detectGraphicsCapabilities({
   });
 }
 
+function isInitializedCompatible(feature) {
+  return Boolean(feature && feature.compatible && feature.initialized && !feature.failed && !feature.unsupported);
+}
+
 function isUsable(feature) {
-  return Boolean(feature && feature.compatible && feature.initialized && !feature.failed && !feature.unsupported && feature.automaticEligible !== false);
+  return isInitializedCompatible(feature) && feature.automaticEligible !== false;
 }
 
 /** Return the first initialized, compatible implementation in fixed DLSS → FSR → WASM order. */
@@ -275,10 +292,13 @@ export function resolveGraphicsMode(mode, { capabilities = null, wasmResult = nu
         upscalerActive: false,
         processingFrames: false,
         processedFrames: selectedFeature.processedFrames || 0,
-        message: `${requestedMode.toUpperCase()} initialization/processing failed: ${selectedFeature.error || selectedFeature.reason}. Falling back safely; ${STANDARD_FALLBACK}`,
+        message: `${requestedMode.toUpperCase()}${selectedFeature.failureStage ? ` failed during ${selectedFeature.failureStage}` : ' initialization/processing failed'}: ${selectedFeature.error || selectedFeature.reason}. Falling back safely; ${STANDARD_FALLBACK}`,
       });
     }
-    if (!isUsable(selectedFeature)) {
+    // A manually selected, initialized integration can be active in its
+    // explicitly bounded scene even when it is intentionally excluded from
+    // automatic selection for ordinary browser tabs.
+    if (!isInitializedCompatible(selectedFeature)) {
       const state = selectedFeature.state || 'UNSUPPORTED';
       return Object.freeze({
         requestedMode,
@@ -297,6 +317,7 @@ export function resolveGraphicsMode(mode, { capabilities = null, wasmResult = nu
       });
     }
     const state = selectedFeature.state || (selectedFeature.processingFrames ? 'PROCESSING FRAMES' : selectedFeature.active ? 'ACTIVE' : 'INITIALIZED');
+    const scopeMessage = selectedFeature.scope ? ` Scope: ${selectedFeature.scope}` : '';
     return Object.freeze({
       requestedMode,
       selectedMode: requestedMode,
@@ -309,8 +330,8 @@ export function resolveGraphicsMode(mode, { capabilities = null, wasmResult = nu
       processingFrames: selectedFeature.processingFrames === true,
       processedFrames: selectedFeature.processedFrames || 0,
       message: selectedFeature.processingFrames
-        ? `${requestedMode.toUpperCase()} reports ${selectedFeature.processedFrames.toLocaleString()} processed frame(s).`
-        : `${requestedMode.toUpperCase()} is initialized, but no processed frame has been confirmed yet.`,
+        ? `${requestedMode.toUpperCase()} reports ${selectedFeature.processedFrames.toLocaleString()} processed frame(s).${scopeMessage}`
+        : `${requestedMode.toUpperCase()} is initialized, but no processed frame has been confirmed yet.${scopeMessage}`,
     });
   }
 

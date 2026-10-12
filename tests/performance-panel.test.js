@@ -21,6 +21,17 @@ test('automatic priority remains DLSS → FSR → WASM while manual mode remains
   assert.match(main, /chooseAutomaticMode\(graphicsCapabilities\)/);
 });
 
+test('FSR lab separates the live game-owned WebGPU path from the PNG screenshot diagnostic and exposes failure state', () => {
+  assert.match(html, /LIVE GAME-SIDE INTEGRATION · CONTROLLED SCENE ONLY/);
+  assert.match(html, /DIAGNOSTIC ONLY · CPU PNG READBACK/);
+  assert.match(html, /No CPU readback feeds processing/);
+  assert.match(html, /queue completion is not pixel-level display proof/);
+  assert.match(html, /packaged Windows smoke separately compares a post-processing screenshot/);
+  assert.match(main, /fsrLastResult\?\.ok === false \? 'FAILED'/);
+  assert.match(main, /setFsrLifecycleState\('FAILED'\)/);
+  assert.match(main, /PNG diagnostic NOT RUN/);
+});
+
 test('collapsing changes panel visibility and preference only, then recalculates browser layout', () => {
   const disclosure = main.match(/function setPerformancePanelExpanded\([\s\S]*?\n\}/)?.[0] || '';
   assert.match(disclosure, /performancePanelCollapsed = !expanded/);

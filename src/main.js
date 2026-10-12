@@ -16,6 +16,8 @@ const utilityDialog = document.querySelector('#utility-dialog');
 const states = Array.from({ length: CORE_COUNT }, () => ({ loading: false, canGoBack: false, canGoForward: false, tabs: [] }));
 let activePane = 0;
 let focusedPane = null;
+let immersiveMode = false;
+let focusedPaneBeforeImmersive = null;
 let syncNavigation = false;
 let toastTimer;
 let layoutFrame = 0;
@@ -34,6 +36,7 @@ let graphicsCapabilities = detectGraphicsCapabilities({ wasm: wasmCapability });
 let fsrCaptureRunning = false;
 let fsrCaptureJobId = '';
 let fsrLastResult = null;
+let fsrWebGpuOpening = false;
 let utilityKind = 'bookmarks';
 
 if (browser) document.body.classList.add('desktop-mode');
@@ -66,6 +69,7 @@ function setActivePane(slot, focusAddress = false) {
   if (!Number.isInteger(slot) || slot < 0 || slot >= CORE_COUNT) return;
   activePane = slot;
   paneElements.forEach((pane, index) => pane.classList.toggle('is-active', index === slot));
+  updateImmersiveLabels();
   updateFsrLabControls();
   if (focusAddress) {
     if (focusedPane !== null && focusedPane !== slot) {
@@ -167,6 +171,10 @@ function updateState(state) {
   pane.querySelector('[data-action="stop"]').hidden = !current.loading;
   if (current.url && document.activeElement !== input) input.value = current.url;
   renderTabs(slot, current.tabs || []);
+  if (!current.fsrWebGpuTestScene && Array.isArray(graphicsInfo?.fsrWebGpuScenes)) {
+    graphicsInfo = { ...graphicsInfo, fsrWebGpuScenes: graphicsInfo.fsrWebGpuScenes.filter((scene) => Number(scene.slot) !== slot) };
+  }
+  updateFsrWebGpuSceneStatus();
   updateFsrLabControls();
 }
 
@@ -261,22 +269,81 @@ async function openNewTab(slot = activePane, rawUrl = null) {
 }
 
 function toggleFocus(slot = activePane) {
+  if (immersiveMode) return;
   if (focusedPane === slot) {
     focusedPane = null;
     grid.removeAttribute('data-focus');
-    document.querySelector('#focus-toggle').setAttribute('aria-label', 'Focus the active core');
-    document.querySelector('#focus-toggle').title = 'Focus active core';
     showToast('Showing all three cores.');
   } else {
     focusedPane = slot;
     activePane = slot;
     setActivePane(slot);
     grid.dataset.focus = String(slot);
-    document.querySelector('#focus-toggle').setAttribute('aria-label', 'Show all three cores');
-    document.querySelector('#focus-toggle').title = 'Show all cores';
     showToast(`Focusing Core ${String(slot + 1).padStart(2, '0')}.`);
   }
   scheduleLayout();
+}
+
+function updateImmersiveLabels() {
+  const pane = getPane(activePane);
+  const title = pane?.querySelector('.pane-heading h2')?.textContent?.trim() || `Core ${String(activePane + 1).padStart(2, '0')}`;
+  const coreLabel = document.querySelector('#immersive-core-label');
+  if (coreLabel) coreLabel.textContent = `CORE ${String(activePane + 1).padStart(2, '0')} · ${title.toUpperCase()}`;
+  const button = document.querySelector('#immersive-toggle');
+  if (button) {
+    button.setAttribute('aria-pressed', String(immersiveMode));
+    button.setAttribute('aria-label', immersiveMode
+      ? `Exit immersive full screen for Core ${activePane + 1}`
+      : `Enter immersive full screen for ${title}`);
+    button.title = immersiveMode ? 'Exit immersive full screen · F11 also toggles' : 'Expand the active browser core to full screen · F11 also toggles';
+  }
+}
+
+function setImmersiveMode(enabled) {
+  const next = Boolean(enabled);
+  const restoreToolbarFocus = !next && document.activeElement?.id === 'immersive-exit';
+  if (next === immersiveMode) {
+    updateImmersiveLabels();
+    return;
+  }
+  if (next) {
+    focusedPaneBeforeImmersive = focusedPane;
+    focusedPane = activePane;
+    grid.dataset.focus = String(activePane);
+    graphicsDialog.close();
+    utilityDialog.close();
+  } else {
+    focusedPane = focusedPaneBeforeImmersive;
+    focusedPaneBeforeImmersive = null;
+    if (focusedPane === null) grid.removeAttribute('data-focus');
+    else grid.dataset.focus = String(focusedPane);
+  }
+  immersiveMode = next;
+  document.documentElement.classList.toggle('is-immersive', immersiveMode);
+  document.body.classList.toggle('is-immersive', immersiveMode);
+  const exitBar = document.querySelector('#immersive-exitbar');
+  if (exitBar) exitBar.hidden = !immersiveMode;
+  updateImmersiveLabels();
+  scheduleLayout();
+  if (restoreToolbarFocus) document.querySelector('#immersive-toggle')?.focus({ preventScroll: true });
+}
+
+async function toggleImmersiveFullscreen() {
+  if (!browser) {
+    showToast('Full-screen gaming view is available in the desktop app.');
+    return;
+  }
+  const requested = !immersiveMode;
+  try {
+    const result = await browser.setFullscreen(requested, activePane);
+    if (!result?.ok) {
+      showToast(result?.error || 'The browser window could not change full-screen mode.');
+      return;
+    }
+    setImmersiveMode(Boolean(result.fullScreen));
+  } catch (error) {
+    showToast(error?.message || 'The browser window could not change full-screen mode.');
+  }
 }
 
 function handleDesktopShortcut(shortcut) {
@@ -439,7 +506,7 @@ async function showUtility(kind) {
       createElement('strong', '', 'TRI-CORE BROWSER'),
       createElement('p', '', 'A three-core desktop browser based on Electron’s bundled Chromium runtime. This is an experimental early release.'),
       createElement('p', '', `${document.querySelector('.app-version')?.textContent || 'Version unavailable'} · Electron ${graphicsInfo?.electronVersion || 'runtime version is available in graphics diagnostics'} · Chromium ${graphicsInfo?.chromiumVersion || 'runtime version is available in graphics diagnostics'}`),
-      createElement('p', '', 'WebAssembly diagnostic: implemented. NVIDIA DLSS: not integrated. AMD FSR: not integrated.'),
+      createElement('p', '', 'WebAssembly diagnostic: implemented. NVIDIA DLSS: not integrated. AMD FSR1: a bounded WebGPU game-side integration scene is included; ordinary pages remain Chromium.'),
     );
     const diagnostics = createElement('button', 'secondary-button settings-diagnostics', 'Open graphics diagnostics');
     diagnostics.type = 'button';
@@ -485,11 +552,12 @@ function lifecycleStateClass(state) {
 
 function featureRuntimeLabel(feature) {
   if (feature.failed) {
-    const count = feature.processedFrames > 0 ? ` · ${feature.processedFrames} confirmed captured frame(s)` : '';
-    return `FAILED · ${feature.error || 'runtime error'}${count}`;
+    const stage = feature.failureStage ? ` at ${feature.failureStage}` : '';
+    const count = feature.processedFrames > 0 ? ` · ${feature.processedFrames} confirmed processed frame(s)` : '';
+    return `FAILED${stage} · ${feature.error || 'runtime error'}${count}`;
   }
   if (feature.automaticEligible === false) {
-    return `${feature.state} · ${feature.processedFrames || 0} captured test frame(s) · not attached to ordinary pages`;
+    return `${feature.state} · ${feature.processedFrames || 0} confirmed controlled-scene frame(s) · excluded from automatic ordinary-page rendering`;
   }
   if (feature.unsupported) return 'Not integrated · initialization not attempted · no frame counter';
   if (!feature.initialized) return `${feature.state} · not initialized`;
@@ -529,10 +597,11 @@ function renderFsrAdapterOptions() {
 
 function updateFsrLabControls() {
   const openButton = document.querySelector('#fsr-open-test-scene');
+  const webGpuOpenButton = document.querySelector('#fsr-open-webgpu-test-scene');
   const runButton = document.querySelector('#fsr-capture-run');
   const cancelButton = document.querySelector('#fsr-capture-cancel');
   const adapterSelect = document.querySelector('#fsr-adapter-select');
-  if (!openButton || !runButton || !cancelButton || !adapterSelect) return;
+  if (!openButton || !webGpuOpenButton || !runButton || !cancelButton || !adapterSelect) return;
   const tab = activeTab(activePane);
   const sceneReady = Boolean(tab?.fsrTestScene && !tab.loading);
   const adapters = Array.isArray(graphicsInfo?.nativeFsrAdapters?.adapters)
@@ -540,6 +609,7 @@ function updateFsrLabControls() {
     : [];
   const adapterSelected = adapters.some((adapter) => String(adapter.index) === adapterSelect.value);
   openButton.disabled = !browser || fsrCaptureRunning;
+  webGpuOpenButton.disabled = !browser || fsrWebGpuOpening;
   adapterSelect.disabled = fsrCaptureRunning || adapters.length === 0;
   runButton.disabled = !browser || fsrCaptureRunning || !sceneReady || !adapterSelected;
   cancelButton.hidden = !fsrCaptureRunning || !fsrCaptureJobId;
@@ -557,6 +627,98 @@ function setFsrLifecycleState(state) {
   chip.dataset.state = lifecycleStateClass(state);
 }
 
+function fsrWebGpuLifecycleLabel(scene) {
+  if (!scene) return 'NOT RUN';
+  if (scene.state === 'unsupported' || scene.unsupported) return 'UNAVAILABLE';
+  if (scene.state === 'adapter-failed') return 'ADAPTER INIT FAILED';
+  if (scene.state === 'device-failed') return 'DEVICE INIT FAILED';
+  if (scene.state === 'shader-failed') return 'SHADER COMPILATION FAILED';
+  if (scene.state === 'pipeline-failed') return 'PIPELINE CREATION FAILED';
+  if (scene.state === 'resource-failed') return 'RESOURCE INITIALIZATION FAILED';
+  if (scene.state === 'device-lost') return 'DEVICE LOST';
+  if (scene.failed || scene.state === 'runtime-failed') return 'RUNTIME FAILED';
+  if (scene.state === 'processing' || scene.processingFrames) return 'PROCESSING';
+  if (scene.state === 'presented' && scene.visibleOutputVerified) return 'VISIBLE OUTPUT VERIFIED';
+  if (scene.state === 'presented' || scene.framesCompleted > 0) return 'OUTPUT SUBMITTED';
+  if (scene.initialized || scene.state === 'initialized') return 'PIPELINES READY';
+  if (scene.state === 'initializing') return 'INITIALIZING';
+  return 'DETECTED';
+}
+
+function updateFsrWebGpuSceneStatus(snapshots = graphicsInfo?.fsrWebGpuScenes || []) {
+  const chip = document.querySelector('#fsr-webgpu-state');
+  const status = document.querySelector('#fsr-webgpu-status');
+  const metrics = document.querySelector('#fsr-webgpu-metrics');
+  if (!chip || !status || !metrics) return;
+  const scenes = Array.isArray(snapshots) ? snapshots : [];
+  const scene = scenes.find((item) => Number(item.slot) === activePane) || scenes[0] || null;
+  if (!scene) {
+    chip.textContent = 'NOT RUN';
+    chip.dataset.state = 'detected';
+    status.textContent = activeTab(activePane)?.fsrWebGpuTestScene
+      ? 'WebGPU scene opened. Waiting for its adapter and FSR1 pipeline status…'
+      : 'NOT RUN. No WebGPU game render target has been initialized in this session.';
+    status.dataset.kind = 'info';
+    metrics.textContent = 'Adapter/device, shader, pipeline, and resource states; EASU/RCAS dispatch counts; input/output resolutions; and queue-completion wall timings appear after the controlled scene runs. GPU timestamps are separate and optional. Visible-pixel comparison and physical-GPU validation remain NOT RUN until evidenced.';
+    return;
+  }
+
+  const state = fsrWebGpuLifecycleLabel(scene);
+  chip.textContent = state;
+  chip.dataset.state = lifecycleStateClass(state);
+  if (scene.failed || scene.state?.endsWith('-failed') || scene.state === 'device-lost') {
+    const failureStage = scene.failureStage || scene.stage || scene.state || 'runtime';
+    status.textContent = `WebGPU FSR1 ${String(failureStage).replaceAll('-', ' ')} failure: ${scene.error || 'unknown error'}. Normal Chromium rendering remains available.`;
+    status.dataset.kind = 'error';
+  } else if (scene.unsupported) {
+    status.textContent = `WebGPU FSR1 is unavailable in this renderer: ${scene.error || 'WebGPU is not exposed or no adapter is available'}. Normal Chromium rendering remains available.`;
+    status.dataset.kind = 'error';
+  } else if (scene.state === 'processing' || scene.processingFrames) {
+    status.textContent = `FSR1 EASU + RCAS compute dispatch is in progress (${scene.framesCompleted || 0} completed frame(s)). A completed queue is not pixel-level proof that the output is visibly correct; screenshot comparison is reserved for the packaged diagnostic smoke test.`;
+    status.dataset.kind = 'working';
+  } else if (scene.visibleOutputVerified === true) {
+    status.textContent = `The controlled packaged smoke test verified visible-canvas output against diagnostic samples (${scene.framesCompleted || 0} completed frame(s)). This does not establish physical-GPU or arbitrary-page support.`;
+    status.dataset.kind = 'pass';
+  } else if (scene.state === 'presented' || (scene.framesCompleted || 0) > 0) {
+    status.textContent = `EASU + RCAS completed ${scene.framesCompleted || 0} frame(s) and submitted the result for the WebGPU canvas. Pixel-level visible-output verification is not available in this session; do not treat queue completion alone as display proof. This is limited to the bundled game scene.`;
+    status.dataset.kind = 'working';
+  } else if (scene.initialized) {
+    status.textContent = 'Adapter, device, shaders, compute/presentation pipelines, and scene resources are initialized; no processed output frame is confirmed yet.';
+    status.dataset.kind = 'working';
+  } else if (scene.state === 'initializing') {
+    status.textContent = `WebGPU FSR1 initialization is in progress${scene.stage ? ` at ${scene.stage}` : ''}. No processing claim is made yet.`;
+    status.dataset.kind = 'working';
+  } else {
+    status.textContent = 'WebGPU was detected, but adapter/device initialization, EASU/RCAS pipeline creation, and frame processing are not yet established.';
+    status.dataset.kind = 'info';
+  }
+
+  const adapterInfo = scene.adapter || {};
+  const adapterName = [adapterInfo.vendor, adapterInfo.device, adapterInfo.description].filter(Boolean).join(' · ') || 'adapter identity not exposed';
+  const adapterType = scene.softwareAdapter === true
+    ? 'software adapter · not physical-GPU evidence'
+    : scene.softwareAdapter === false
+      ? 'adapter marked non-software · physical identity still requires manual review'
+      : 'software/physical classification unknown';
+  const input = scene.inputWidth && scene.inputHeight ? `${scene.inputWidth}×${scene.inputHeight}` : 'not initialized';
+  const output = scene.outputWidth && scene.outputHeight ? `${scene.outputWidth}×${scene.outputHeight}` : 'not initialized';
+  const queueWall = Number.isFinite(scene.lastQueueCompletionWallMs)
+    ? `last ${scene.lastQueueCompletionWallMs.toFixed(2)} ms · average ${Number(scene.averageQueueCompletionWallMs).toFixed(2)} ms · max ${Number(scene.maxQueueCompletionWallMs).toFixed(2)} ms`
+    : 'queue timing not available';
+  const shaderState = scene.shaderCompilationStatus || (scene.initialized ? 'compiled' : 'pending');
+  const pipelineState = scene.pipelineCreationStatus || (scene.initialized ? 'created' : 'pending');
+  const dispatches = `EASU/RCAS dispatches ${scene.easuDispatches || 0}/${scene.rcasDispatches || 0}`;
+  const gpuTimestamps = scene.gpuTimestampsAvailable
+    ? `${scene.gpuTimestampSamples || 0} GPU timestamp sample(s)`
+    : 'GPU timestamps unavailable';
+  const visibleProof = scene.visibleOutputVerified === true
+    ? 'visible-pixel check passed'
+    : 'visible-pixel check not run';
+  const stageDetail = scene.failureStage || scene.stage || '';
+  const resourceState = scene.resourceInitializationStatus || (scene.initialized ? 'passed' : 'pending');
+  metrics.textContent = `${adapterName} · ${adapterType} · WebGPU ${scene.state || 'detected'}${stageDetail ? ` at ${stageDetail}` : ''} · shaders ${shaderState} · pipelines ${pipelineState} · resources ${resourceState} · ${dispatches} · ${input} → ${output} · ${scene.framesCompleted || 0} completed / ${scene.framesSubmitted || 0} submitted · ${queueWall} · ${gpuTimestamps} · ${visibleProof}. Queue timing is performance.now() frame-encoding-to-queue-completion wall time, not a GPU timestamp. Physical-GPU validation: NOT RUN in this session.`;
+}
+
 function renderFsrTestResult(result) {
   const root = document.querySelector('#fsr-test-result');
   const frame = result?.frames?.[result.frames.length - 1];
@@ -572,6 +734,65 @@ function renderFsrTestResult(result) {
   document.querySelector('#fsr-test-metrics-detail').textContent = `${frame.inputWidth}×${frame.inputHeight} → ${frame.outputWidth}×${frame.outputHeight} · ${adapterType} · capturePage ${frame.capturePageMs.toFixed(2)} ms · native helper ${frame.nativeProcessMs.toFixed(2)} ms · ${gpuTimes} · batch wall ${result.totalRoundTripMs.toFixed(2)} ms. Upscaling changes image dimensions; no performance gain is established.`;
   document.querySelector('#fsr-test-capture-paths').textContent = `Input PNG: ${frame.inputPath} · Processed PNG: ${frame.outputPath} · Bilinear reference PNG: ${frame.referencePath} · Native report: ${frame.reportPath} · Input SHA-256: ${frame.inputSha256}`;
   setFsrTestStatus('FSR1 passed for the controlled WebGL2 capture. The original browser tab was not replaced or modified; regular pages still render in Chromium.', 'pass');
+}
+
+async function openFsrWebGpuTestScene() {
+  if (!browser) {
+    showToast('The WebGPU FSR1 integration scene opens in the Windows desktop app.');
+    return;
+  }
+  const slot = activePane;
+  const button = document.querySelector('#fsr-open-webgpu-test-scene');
+  fsrWebGpuOpening = true;
+  button.textContent = 'Starting WebGPU…';
+  setFsrWebGpuStatusMessage(`Opening the bundled WebGPU FSR1 game scene in Core ${slot + 1}…`, 'working');
+  updateFsrLabControls();
+  try {
+    const result = await browser.openFsrWebGpuTestScene(slot);
+    if (!result?.ok) throw new Error(result?.error || 'The WebGPU FSR1 scene tab could not be opened.');
+    const currentStates = await browser.getStates();
+    currentStates.forEach(updateState);
+
+    const deadline = performance.now() + 25_000;
+    let snapshots = [];
+    let scene = null;
+    while (performance.now() < deadline) {
+      snapshots = await browser.getFsrWebGpuTestStatus();
+      scene = snapshots.find((item) => item.tabId === result.tabId) || null;
+      updateFsrWebGpuSceneStatus(snapshots);
+      if (scene?.failed || scene?.unsupported) break;
+      if (scene?.framesCompleted >= 3) break;
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
+    }
+    graphicsInfo = { ...(graphicsInfo || {}), fsrWebGpuScenes: snapshots };
+    await refreshGraphicsDiagnostics({ force: true });
+    updateFsrWebGpuSceneStatus(graphicsInfo?.fsrWebGpuScenes || snapshots);
+
+    if (scene?.failed || scene?.unsupported) {
+      throw new Error(`${scene.stage || scene.state || 'WebGPU'}: ${scene.error || 'The WebGPU FSR1 test is unavailable.'}`);
+    }
+    if (scene?.visibleOutputVerified === true) {
+      setFsrWebGpuStatusMessage(`VISIBLE OUTPUT VERIFIED · The controlled screenshot comparison passed for ${scene.framesCompleted} processed frame(s). This is game-owned WebGPU evidence only; physical-GPU and arbitrary-page support remain unestablished.`, 'pass');
+    } else if (scene?.framesCompleted >= 3) {
+      setFsrWebGpuStatusMessage(`COMPUTE COMPLETE · ${scene.framesCompleted} frame(s) were processed and submitted to the WebGPU canvas. Visible-pixel comparison is not run in the interactive scene, so this is not a claim that displayed pixels were verified. The packaged smoke test performs that separate diagnostic check.`, 'working');
+    } else {
+      setFsrWebGpuStatusMessage('Scene opened. Adapter/device initialization, pipeline creation, or frame processing is still pending; check the scene panel and Diagnostics. No fallback or hardware support is inferred.', 'working');
+    }
+  } catch (error) {
+    setFsrWebGpuStatusMessage(error?.message || 'The WebGPU FSR1 test could not be started; ordinary pages remain on Chromium.', 'error');
+    showToast(error?.message || 'The WebGPU FSR1 test could not be started.');
+  } finally {
+    fsrWebGpuOpening = false;
+    button.textContent = 'Open WebGPU FSR1 scene in active core';
+    updateFsrLabControls();
+  }
+}
+
+function setFsrWebGpuStatusMessage(message, kind = 'info') {
+  const status = document.querySelector('#fsr-webgpu-status');
+  if (!status) return;
+  status.textContent = String(message || '');
+  status.dataset.kind = kind;
 }
 
 async function openFsrTestScene() {
@@ -624,8 +845,11 @@ async function runFsrCaptureTest() {
     await refreshGraphicsDiagnostics({ force: true });
     renderGraphicsMode(selectedMode);
   } catch (error) {
-    setFsrTestStatus(error?.message || 'The opt-in FSR test failed; standard Chromium rendering remains active.', 'error');
-    showToast(error?.message || 'The FSR frame-capture test failed.');
+    const message = error?.message || 'The opt-in FSR test failed; standard Chromium rendering remains active.';
+    fsrLastResult = { ok: false, error: message };
+    setFsrLifecycleState('FAILED');
+    setFsrTestStatus(message, 'error');
+    showToast(message);
   } finally {
     fsrCaptureRunning = false;
     fsrCaptureJobId = '';
@@ -679,12 +903,17 @@ function renderPerformancePanel(state) {
   const nvidiaLabel = report?.gpu?.nvidiaDetected
     ? 'NVIDIA GPU reported by Electron; DLSS runtime/compatibility not verified'
     : report?.gpu?.infoError ? 'GPU identification unavailable' : 'No NVIDIA GPU reported by Electron';
-  const compatibleAdapters = graphicsInfo?.nativeFsrAdapters?.adapters?.filter((adapter) => !adapter.softwareAdapter && adapter.fsr1Compatible) || [];
-  const fsrHardwareLabel = compatibleAdapters.length
-    ? `${compatibleAdapters.length} FSR1-capable non-software D3D12 adapter(s); separate helper, not proven to match Chromium GPU`
-    : graphicsInfo?.nativeFsrAdapters?.warpAvailable
-      ? 'No compatible non-software D3D12 adapter; WARP is software-only'
-      : 'No compatible hardware D3D12 adapter reported';
+  const fsrWebGpuScene = graphicsInfo?.fsrWebGpuScenes?.find((scene) => scene.processingFrames) || graphicsInfo?.fsrWebGpuScenes?.[0];
+  const webGpuAdapterInfo = fsrWebGpuScene?.adapter || {};
+  const webGpuAdapterName = [webGpuAdapterInfo.vendor, webGpuAdapterInfo.device, webGpuAdapterInfo.description].filter(Boolean).join(' · ');
+  const webGpuAdapterClass = fsrWebGpuScene?.softwareAdapter === true
+    ? 'software WebGPU adapter'
+    : fsrWebGpuScene?.softwareAdapter === false
+      ? 'non-software WebGPU adapter; physical identity needs manual review'
+      : 'WebGPU adapter not classified';
+  const fsrHardwareLabel = fsrWebGpuScene
+    ? `${webGpuAdapterName || 'WebGPU adapter identity not exposed'} · ${webGpuAdapterClass}`
+    : 'WebGPU FSR1 adapter not initialized; physical-GPU validation NOT RUN';
   updateTechnologyCard('dlss', report?.technologies?.dlss, nvidiaLabel);
   updateTechnologyCard('fsr', report?.technologies?.fsr, fsrHardwareLabel);
   updateTechnologyCard('wasm', report?.technologies?.wasm);
@@ -705,10 +934,12 @@ function renderPerformancePanel(state) {
     const dimensions = activeUpscaler.inputWidth && activeUpscaler.inputHeight && activeUpscaler.outputWidth && activeUpscaler.outputHeight
       ? ` · ${activeUpscaler.inputWidth}×${activeUpscaler.inputHeight} → ${activeUpscaler.outputWidth}×${activeUpscaler.outputHeight}`
       : '';
-    frameSummary.textContent = `${activeUpscaler.id.toUpperCase()} · ${activeUpscaler.processedFrames} confirmed frame(s)${dimensions}`;
-    gpuTimeSummary.textContent = activeUpscaler.gpuTimeMs === null
-      ? 'GPU time not reported by the native backend'
-      : `GPU ${activeUpscaler.gpuTimeMs.toFixed(3)} ms${activeUpscaler.cpuTimeMs === null ? '' : ` · CPU ${activeUpscaler.cpuTimeMs.toFixed(3)} ms`}`;
+    frameSummary.textContent = `${activeUpscaler.id.toUpperCase()} · ${activeUpscaler.processedFrames} confirmed controlled-scene frame(s)${dimensions}`;
+    gpuTimeSummary.textContent = activeUpscaler.id === 'fsr' && Number.isFinite(activeUpscaler.queueCompletionWallMs)
+      ? `WebGPU frame-encode → queue-completion wall ${activeUpscaler.queueCompletionWallMs.toFixed(2)} ms · average ${Number(activeUpscaler.averageQueueCompletionWallMs).toFixed(2)} ms · not a GPU timestamp`
+      : activeUpscaler.gpuTimeMs === null
+        ? 'GPU time not reported by the native backend'
+        : `GPU ${activeUpscaler.gpuTimeMs.toFixed(3)} ms${activeUpscaler.cpuTimeMs === null ? '' : ` · CPU ${activeUpscaler.cpuTimeMs.toFixed(3)} ms`}`;
   } else if (fsrLastResult?.ok || previousFsrReport) {
     const completedFrames = fsrLastResult?.ok ? fsrLastResult.frameCount : report?.technologies?.fsr?.processedFrames || 1;
     const latest = fsrLastResult?.ok ? fsrLastResult.frames.at(-1) : null;
@@ -723,7 +954,7 @@ function renderPerformancePanel(state) {
     gpuTimeSummary.textContent = 'No frame timing is reported until a native pass processes a real frame.';
   } else {
     frameSummary.textContent = 'No native upscaler active; no general-page frame counter is available.';
-    gpuTimeSummary.textContent = 'GPU timings unavailable · FSR test-scene capture has not been run.';
+    gpuTimeSummary.textContent = 'No WebGPU FSR1 scene timing has been reported; physical-GPU validation is NOT RUN.';
   }
 
   const displayNames = {
@@ -747,13 +978,15 @@ function renderPerformancePanel(state) {
         : `${state.state} · no unverified graphics path is enabled.`;
   } else {
     compactMode.textContent = `Manual · ${displayNames[selectedMode]}`;
-    compactDetail.textContent = selectedMode === 'fsr' && state.state === 'COMPATIBLE'
-      ? 'FSR1 is available only for the opt-in WebGL2 capture preview; regular pages remain Chromium.'
-      : state.state === 'UNSUPPORTED' || state.state === 'FAILED'
-        ? `${state.state} · safe Chromium fallback; no page upscaling.`
-        : selectedMode === 'wasm'
-          ? 'WASM runtime only; it does not upscale images.'
-          : `${state.state} · page rendering remains Chromium unless a native page-frame path is verified.`;
+    compactDetail.textContent = selectedMode === 'fsr' && state.upscalerActive
+      ? 'FSR1 is processing only the bundled WebGPU game scene; ordinary pages remain Chromium.'
+      : selectedMode === 'fsr' && state.state !== 'UNSUPPORTED' && state.state !== 'FAILED'
+        ? 'FSR1 requires the opt-in bundled WebGPU game scene; no ordinary-page upscaling is claimed.'
+        : state.state === 'UNSUPPORTED' || state.state === 'FAILED'
+          ? `${state.state} · safe Chromium fallback; no ordinary-page upscaling.`
+          : selectedMode === 'wasm'
+            ? 'WASM runtime only; it does not upscale images.'
+            : `${state.state} · page rendering remains Chromium unless an applicable native page-frame path is verified.`;
   }
 
   const errorBox = document.querySelector('#performance-error');
@@ -945,20 +1178,22 @@ async function refreshGraphicsDiagnostics({ force = false } = {}) {
     const compatibleFsrAdapters = fsrAdapters.filter((adapter) => !adapter.softwareAdapter && adapter.fsr1Compatible);
     const glRenderer = nativeInfo?.graphicsApiDetails?.glRenderer || nativeInfo?.graphicsApiDetails?.glImplementationParts || 'Chromium renderer API details not reported';
     const fsrStatus = nativeInfo?.nativeFsrAdapters?.available
-      ? `${compatibleFsrAdapters.length} compatible non-software D3D12 adapter(s); capture test is manual and test-scene-only`
-      : nativeInfo?.nativeFsrAdapters?.error || 'Native helper not present in this runtime';
-    summary.textContent = `${electron} · ${chromium} · GPU: ${gpuText} · Chromium GL: ${glRenderer} · WebGPU: ${webgpu.status} · WebGL2: ${webgl2.status} · D3D12 FSR1: ${fsrStatus}`;
+      ? `${compatibleFsrAdapters.length} compatible non-software D3D12 adapter(s) for the PNG diagnostic only`
+      : nativeInfo?.nativeFsrAdapters?.error || 'Native D3D12 screenshot helper not present in this runtime';
+    const liveFsrScene = nativeInfo?.fsrWebGpuScenes?.find((scene) => scene.processingFrames) || nativeInfo?.fsrWebGpuScenes?.[0];
+    const liveFsrStatus = liveFsrScene?.processingFrames
+      ? `WebGPU FSR1 ${liveFsrScene.framesCompleted} frame(s) in the controlled game scene`
+      : 'WebGPU FSR1 scene NOT RUN';
+    summary.textContent = `${electron} · ${chromium} · GPU: ${gpuText} · Chromium GL: ${glRenderer} · WebGPU: ${webgpu.status} · WebGL2: ${webgl2.status} · ${liveFsrStatus} · D3D12 diagnostic: ${fsrStatus}`;
     const fsrTestSupport = document.querySelector('#fsr-test-state');
     if (fsrTestSupport && !fsrCaptureRunning) {
-      const fsrFeature = graphicsCapabilities?.technologies?.fsr;
-      fsrTestSupport.textContent = fsrFeature?.state || 'NOT RUN';
-      fsrTestSupport.dataset.state = lifecycleStateClass(fsrFeature?.state);
-      if (!fsrLastResult) {
-        setFsrTestStatus(fsrFeature?.compatible
-          ? 'Ready for the controlled WebGL2 scene. Processing starts only after you select a hardware adapter and click Capture + process.'
-          : fsrFeature?.reason || 'Native FSR1 capture support has not been verified in this runtime.', fsrFeature?.compatible ? 'info' : 'error');
+      fsrTestSupport.textContent = fsrLastResult?.ok ? 'PASS' : fsrLastResult?.ok === false ? 'FAILED' : nativeInfo?.lastFsrReport ? 'PREVIOUS RUN' : 'NOT RUN';
+      fsrTestSupport.dataset.state = fsrLastResult?.ok ? 'initialized' : fsrLastResult?.ok === false ? 'failed' : nativeInfo?.lastFsrReport ? 'initialized' : 'detected';
+      if (!fsrLastResult && !nativeInfo?.lastFsrReport) {
+        setFsrTestStatus('PNG diagnostic NOT RUN. It remains opt-in, separately labeled, and is never used as a live browser upscaler.', 'info');
       }
     }
+    updateFsrWebGpuSceneStatus(nativeInfo?.fsrWebGpuScenes || []);
     document.querySelector('#graphics-raw').textContent = JSON.stringify({
       platform: nativeInfo?.platform || navigator.platform,
       architecture: nativeInfo?.architecture || 'browser preview',
@@ -968,6 +1203,7 @@ async function refreshGraphicsDiagnostics({ force = false } = {}) {
       chromiumGraphicsApiDetails: nativeInfo?.graphicsApiDetails || {},
       chromiumGpuFeatureStatus: nativeInfo?.featureStatus || 'Native diagnostics unavailable in web preview',
       nativeD3D12FsrAdapters: nativeInfo?.nativeFsrAdapters || null,
+      fsrWebGpuScenes: nativeInfo?.fsrWebGpuScenes || [],
       lastFsrBrowserFrameReport: nativeInfo?.lastFsrReport || null,
       webgpu,
       webgl2,
@@ -1038,7 +1274,8 @@ document.querySelector('#reload-all').addEventListener('click', async () => {
 });
 
 document.querySelector('#new-tab').addEventListener('click', () => openNewTab(activePane));
-document.querySelector('#focus-toggle').addEventListener('click', () => toggleFocus(activePane));
+document.querySelector('#immersive-toggle').addEventListener('click', toggleImmersiveFullscreen);
+document.querySelector('#immersive-exit').addEventListener('click', toggleImmersiveFullscreen);
 document.querySelector('#bookmark-current').addEventListener('click', async () => {
   const current = states[activePane];
   if (!browser || !current?.url) {
@@ -1066,6 +1303,7 @@ document.querySelector('#graphics-mode-select').addEventListener('change', (even
   selectGraphicsMode(event.currentTarget.value);
 });
 document.querySelector('#performance-wasm-run').addEventListener('click', runWasmDiagnostic);
+document.querySelector('#fsr-open-webgpu-test-scene').addEventListener('click', openFsrWebGpuTestScene);
 document.querySelector('#fsr-open-test-scene').addEventListener('click', openFsrTestScene);
 document.querySelector('#fsr-capture-run').addEventListener('click', runFsrCaptureTest);
 document.querySelector('#fsr-capture-cancel').addEventListener('click', cancelFsrCaptureTest);
@@ -1140,6 +1378,7 @@ if (browser) {
   browser.onState(updateState);
   browser.onActive((slot) => switchCore(Number(slot)));
   browser.onShortcut(handleDesktopShortcut);
+  browser.onFullscreenState((enabled) => setImmersiveMode(Boolean(enabled)));
   browser.onFsrProgress((progress) => {
     if (!fsrCaptureRunning || !progress?.jobId) return;
     if (!fsrCaptureJobId) fsrCaptureJobId = progress.jobId;

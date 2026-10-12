@@ -1,4 +1,6 @@
-TRI-CORE BROWSER — CHECKED-IN BUILD STATUS
+TRI-CORE BROWSER — HISTORICAL BUILD STATUS (NOT CURRENT SOURCE)
+
+This report records results for the older app/source commit below only. It does not cover the current uncommitted source, the immersive fullscreen changes, or current WebGPU/FSR1 packaged acceptance.
 
 Report date (UTC): 2026-10-11
 Repository: https://github.com/shuvrajeetkamila/Tri-Core-Browser

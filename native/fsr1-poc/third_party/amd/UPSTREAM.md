@@ -1,4 +1,4 @@
-This directory contains the minimum AMD FidelityFX FSR 1.0.2 shader sources used by the separate native proof-of-concept.
+This directory contains the minimum AMD FidelityFX FSR 1.0.2 shader sources used by the separate native D3D12 PNG diagnostic helper and the reference material for the bounded WebGPU WGSL adaptation in `app/diagnostics/fsr1-webgpu.js`.
 
 Upstream: https://github.com/GPUOpen-Effects/FidelityFX-FSR
 Pinned upstream commit: `a21ffb8f6c13233ba336352bdff293894c706575`
