@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -139,6 +140,19 @@ std::string JsonEscape(const std::string& value) {
     return out.str();
 }
 
+bool IsSoftwareAdapter(const DXGI_ADAPTER_DESC1& description) {
+    if ((description.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0) return true;
+    // Some Windows versions expose WARP as Microsoft Basic Render Driver without
+    // setting DXGI_ADAPTER_FLAG_SOFTWARE. Exclude its documented identity/name
+    // from hardware enumeration so a software renderer cannot pass the GPU gate.
+    if (description.VendorId == 0x1414 && description.DeviceId == 0x008c) return true;
+    std::string name = Utf8(description.Description);
+    std::transform(name.begin(), name.end(), name.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return name.find("warp") != std::string::npos || name.find("basic render driver") != std::string::npos;
+}
+
 fs::path ExecutableDirectory() {
     std::array<wchar_t, 32768> buffer{};
     const DWORD size = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
@@ -248,7 +262,7 @@ std::vector<Adapter> EnumerateHardwareAdapters() {
         Check(enumResult, "EnumAdapters1");
         DXGI_ADAPTER_DESC1 description{};
         Check(candidate->GetDesc1(&description), "GetDesc1");
-        if (description.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) continue;
+        if (IsSoftwareAdapter(description)) continue;
         ComPtr<ID3D12Device> device;
         if (FAILED(D3D12CreateDevice(candidate.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device)))) continue;
         Adapter adapter;

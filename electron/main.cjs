@@ -662,24 +662,31 @@ async function getNativeFsrAdapters({ refresh = false } = {}) {
       const { stdout } = await runNativeFsrProcess(executable, ['--list-adapters']);
       const report = JSON.parse(stdout.trim());
       if (report?.status !== 'PASS' || !Array.isArray(report.adapters)) throw new Error('Adapter enumeration returned an invalid report.');
-      const adapters = report.adapters.filter((adapter) => adapter && Number.isInteger(adapter.index)).map((adapter) => ({
-        index: adapter.index,
-        name: clampText(adapter.name || 'Unknown D3D12 adapter', 160),
-        vendorId: clampText(adapter.vendorId || '', 20),
-        deviceId: clampText(adapter.deviceId || '', 20),
-        dedicatedVideoMemoryBytes: Math.max(0, Number(adapter.dedicatedVideoMemoryBytes) || 0),
-        softwareAdapter: adapter.softwareAdapter === true,
-        featureLevel: clampText(adapter.featureLevel || '', 32),
-        shaderModel: clampText(adapter.shaderModel || '', 80),
-        supports: adapter.support && typeof adapter.support === 'object' ? {
-          r8g8b8a8Texture2D: adapter.support.r8g8b8a8Texture2D === true,
-          shaderSample: adapter.support.shaderSample === true,
-          shaderLoad: adapter.support.shaderLoad === true,
-          unorderedAccess: adapter.support.unorderedAccess === true,
-          typedUavStore: adapter.support.typedUavStore === true,
-        } : {},
-        fsr1Compatible: adapter.fsr1Compatible === true,
-      }));
+      const adapters = report.adapters.filter((adapter) => adapter && Number.isInteger(adapter.index)).map((adapter) => {
+        const name = clampText(adapter.name || 'Unknown D3D12 adapter', 160);
+        const vendorId = clampText(adapter.vendorId || '', 20);
+        const deviceId = clampText(adapter.deviceId || '', 20);
+        const softwareIdentity = /\bwarp\b|basic render driver/i.test(name)
+          || (vendorId.toLowerCase() === '0x1414' && deviceId.toLowerCase() === '0x008c');
+        return {
+          index: adapter.index,
+          name,
+          vendorId,
+          deviceId,
+          dedicatedVideoMemoryBytes: Math.max(0, Number(adapter.dedicatedVideoMemoryBytes) || 0),
+          softwareAdapter: adapter.softwareAdapter === true || softwareIdentity,
+          featureLevel: clampText(adapter.featureLevel || '', 32),
+          shaderModel: clampText(adapter.shaderModel || '', 80),
+          supports: adapter.support && typeof adapter.support === 'object' ? {
+            r8g8b8a8Texture2D: adapter.support.r8g8b8a8Texture2D === true,
+            shaderSample: adapter.support.shaderSample === true,
+            shaderLoad: adapter.support.shaderLoad === true,
+            unorderedAccess: adapter.support.unorderedAccess === true,
+            typedUavStore: adapter.support.typedUavStore === true,
+          } : {},
+          fsr1Compatible: adapter.fsr1Compatible === true,
+        };
+      });
       nativeFsrAdapterCache = { available: true, adapters, warpAvailable: report.warpAvailable === true, error: '' };
       nativeFsrAdapterCacheAt = Date.now();
       return nativeFsrAdapterCache;
@@ -1066,6 +1073,14 @@ async function getGraphicsDiagnostics() {
     implemented: fs.existsSync(FSR_WEBGPU_TEST_SCENE_PATH),
     detected: Boolean(fsrWebGpuScene?.detected),
     adapterDetected: fsrWebGpuScene?.adapterDetected === true,
+    adapterRequestPath: clampText(fsrWebGpuScene?.adapterRequestPath || '', 40),
+    adapterRequestResults: Array.isArray(fsrWebGpuScene?.adapterRequestResults)
+      ? fsrWebGpuScene.adapterRequestResults.slice(0, 4).map((result) => ({
+        path: clampText(result?.path || '', 40),
+        status: clampText(result?.status || '', 24),
+        error: clampText(result?.error || '', 240),
+      }))
+      : [],
     state: String(fsrWebGpuScene?.state || (fsrWebGpuScene?.detected ? 'detected' : 'not-run')),
     failureStage: clampText(fsrWebGpuScene?.failureStage || '', 80),
     shaderCompilationStatus: String(fsrWebGpuScene?.shaderCompilationStatus || 'NOT RUN'),
@@ -1662,6 +1677,8 @@ async function runSmokeTest() {
         screenshotCapture: 'capturePage PNG after processed canvas presentation; evidence only and never used as an FSR input',
         adapter: webGpuSnapshot.adapter,
         adapterInfoAvailable: webGpuSnapshot.adapterInfoAvailable,
+        adapterRequestPath: webGpuSnapshot.adapterRequestPath,
+        adapterRequestResults: webGpuSnapshot.adapterRequestResults,
         softwareAdapter: webGpuSnapshot.softwareAdapter,
         softwareClassification: webGpuSnapshot.softwareAdapter === true ? 'reported software adapter' : webGpuSnapshot.softwareAdapter === false ? 'reported non-software adapter; physical identity not established' : 'unknown',
         lifecycle: {

@@ -1,10 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
+const nativeFsrSource = fs.readFileSync(new URL('../native/fsr1-poc/Fsr1Poc.cpp', import.meta.url), 'utf8');
+const mainSource = fs.readFileSync(new URL('../electron/main.cjs', import.meta.url), 'utf8');
 const {
   EXPECTED_INPUT_SOURCE,
   FSR_TECHNOLOGY,
@@ -71,6 +74,16 @@ test('bundled FSR scene URL check normalizes file URLs but rejects other paths a
   assert.equal(isFileUrlForPath(sceneUrl.replace('fsr1-browser-game.html', 'other.html'), scenePath), false);
   assert.equal(isFileUrlForPath('https://example.com/fsr1-browser-game.html', scenePath), false);
   assert.equal(isFileUrlForPath(sceneUrl, ''), false);
+});
+
+test('WARP and Microsoft Basic Render Driver are excluded from physical-adapter classification', () => {
+  assert.match(nativeFsrSource, /bool IsSoftwareAdapter\(const DXGI_ADAPTER_DESC1& description\)/);
+  assert.match(nativeFsrSource, /description\.Flags & DXGI_ADAPTER_FLAG_SOFTWARE/);
+  assert.match(nativeFsrSource, /description\.VendorId == 0x1414 && description\.DeviceId == 0x008c/);
+  assert.match(nativeFsrSource, /basic render driver/);
+  assert.match(nativeFsrSource, /if \(IsSoftwareAdapter\(description\)\) continue/);
+  assert.ok(mainSource.includes(String.raw`const softwareIdentity = /\bwarp\b|basic render driver/i.test(name)`));
+  assert.match(mainSource, /softwareAdapter: adapter\.softwareAdapter === true \|\| softwareIdentity/);
 });
 
 test('native helper uses a fixed argument vector and never invokes a command shell', () => {

@@ -23,6 +23,23 @@ test('bundled WebGPU FSR1 scene is a restrictive local-only page', () => {
   assert.match(css, /canvas \{ display: block; width: 100%; height: 100%;/);
 });
 
+test('WebGPU adapter discovery safely retries preferences and an explicit software fallback without downgrading feature gates', () => {
+  const attempts = ['high-performance', 'low-power', 'default', 'force-fallback'].map((path) => scene.indexOf(`path: '${path}'`));
+  assert.ok(attempts.every((index) => index >= 0));
+  assert.deepEqual(attempts, [...attempts].sort((a, b) => a - b), 'adapter requests keep deterministic hardware-preference order before the explicit fallback');
+  assert.match(scene, /forceFallbackAdapter: true/);
+  assert.match(scene, /adapterRequestResults\.push\(\{ path: attempt\.path, status: adapter \? 'selected' : 'unavailable' \}\)/);
+  assert.match(scene, /adapterRequestPath,/);
+  assert.match(scene, /adapterRequestResults,/);
+  assert.match(main, /adapterRequestPath: clampText\(fsrWebGpuScene\?\.adapterRequestPath \|\| '', 40\)/);
+  assert.match(main, /adapterRequestPath: webGpuSnapshot\.adapterRequestPath/);
+  assert.match(scene, /allRequestsRejected \? 'adapter-failed' : 'unsupported'/);
+  assert.match(scene, /if \(!adapter\) \{[\s\S]*?renderFailure\([\s\S]*stage: 'adapter-discovery'/);
+  assert.match(scene, /shaderCompilationStatus = 'passed'/, 'successful adapter discovery still must pass shader compilation');
+  assert.match(scene, /pipelineCreationStatus = 'passed'/, 'successful adapter discovery still must create real pipelines');
+  assert.match(scene, /framesSubmitted \+= 1[\s\S]*?framesCompleted \+= 1/, 'successful adapter discovery still must dispatch and complete real GPU work');
+});
+
 test('FSR1 scene consumes an app-owned WebGPU texture and presents RCAS output through its visible canvas', () => {
   assert.match(scene, /navigator\.gpu\.requestAdapter/);
   assert.match(scene, /adapter\.requestDevice\(\)/);

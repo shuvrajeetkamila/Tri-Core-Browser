@@ -39,6 +39,8 @@
   let adapterDetected = false;
   let adapterDetails = null;
   let softwareAdapter = null;
+  let adapterRequestPath = '';
+  let adapterRequestResults = [];
   let device = null;
   let context = null;
   let canvasFormat = '';
@@ -766,16 +768,40 @@ fn fsMain(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
       return;
     }
 
-    updateStatus('Requesting a high-performance WebGPU adapter…', 'working');
+    updateStatus('Requesting a WebGPU adapter with safe preference fallbacks…', 'working');
+    const adapterAttempts = [
+      { path: 'high-performance', options: { powerPreference: 'high-performance' } },
+      { path: 'low-power', options: { powerPreference: 'low-power' } },
+      { path: 'default', options: {} },
+      { path: 'force-fallback', options: { forceFallbackAdapter: true } },
+    ];
     let adapter;
-    try {
-      adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
-    } catch (error) {
-      renderFailure(`WebGPU adapter request rejected: ${error?.message || String(error)}`, { state: 'adapter-failed', stage: 'adapter-request' });
-      return;
+    for (const attempt of adapterAttempts) {
+      try {
+        adapter = await navigator.gpu.requestAdapter(attempt.options);
+        adapterRequestResults.push({ path: attempt.path, status: adapter ? 'selected' : 'unavailable' });
+        if (adapter) {
+          adapterRequestPath = attempt.path;
+          break;
+        }
+      } catch (error) {
+        adapterRequestResults.push({
+          path: attempt.path,
+          status: 'rejected',
+          error: String(error?.message || error || 'adapter request rejected').slice(0, 240),
+        });
+      }
     }
     if (!adapter) {
-      renderFailure('WebGPU did not provide a compatible adapter for this renderer.', { state: 'unsupported', stage: 'adapter-discovery' });
+      const allRequestsRejected = adapterRequestResults.length > 0
+        && adapterRequestResults.every((result) => result.status === 'rejected');
+      const requestSummary = adapterRequestResults
+        .map((result) => `${result.path}: ${result.status}${result.error ? ` (${result.error})` : ''}`)
+        .join('; ');
+      renderFailure(
+        `WebGPU did not provide a compatible adapter after high-performance, low-power, default, and explicit fallback requests. ${requestSummary}`,
+        { state: allRequestsRejected ? 'adapter-failed' : 'unsupported', stage: 'adapter-discovery' },
+      );
       return;
     }
     adapterDetected = true;
@@ -1170,6 +1196,8 @@ fn fsMain(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
       evidenceFrozen,
       adapter: adapterDetails,
       adapterInfoAvailable: Boolean(adapterDetails),
+      adapterRequestPath,
+      adapterRequestResults,
       softwareAdapter,
       inputWidth: renderWidth,
       inputHeight: renderHeight,
