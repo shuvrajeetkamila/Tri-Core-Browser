@@ -49,6 +49,17 @@ test('Windows build/release gates validate both the WARP PNG diagnostic and live
     assert.ok(workflow.includes('steps.packaged_executable.outcome == \'failure\''), `${workflowName} must surface diagnostics when executable validation fails`);
   }
 
+  const buildWorkflow = fs.readFileSync(new URL('../.github/workflows/build.yml', import.meta.url), 'utf8');
+  const candidateUploadIndex = buildWorkflow.indexOf('name: Upload unverified packaged executable for diagnostics');
+  const packagedSmokeIndex = buildWorkflow.indexOf('name: Run packaged-app smoke test');
+  assert.ok(candidateUploadIndex >= 0 && candidateUploadIndex < packagedSmokeIndex, 'upload the packaged smoke candidate before the graphics/runtime gate so a failing gate does not discard the executable');
+  const candidateUploadStep = buildWorkflow.slice(candidateUploadIndex, packagedSmokeIndex);
+  assert.ok(candidateUploadStep.includes("if: always() && steps.packaged_executable.outcome == 'success'"), 'only upload the candidate when executable packaging/size validation passed, even if a later smoke gate fails');
+  assert.ok(candidateUploadStep.includes('continue-on-error: true'), 'an artifact-service hiccup must not skip the strict packaged runtime smoke');
+  assert.ok(candidateUploadStep.includes('name: TriCoreBrowser-Windows-x64-unverified-smoke-candidate'), 'make the unverified artifact status explicit in its artifact name');
+  assert.ok(candidateUploadStep.includes('path: release/TriCoreBrowser.exe'), 'upload the actual packaged executable, not source or renderer output');
+  assert.ok(candidateUploadStep.includes('retention-days: 30'), 'retain the diagnostic executable as a normal workflow artifact');
+
   const packageScript = fs.readFileSync(new URL('../scripts/package-windows.ps1', import.meta.url), 'utf8');
   assert.ok(packageScript.includes('[System.IO.Path]::GetFullPath([string]$frame.nativeReport.bilinearReferencePath) -ne [System.IO.Path]::GetFullPath([string]$frame.referencePath)'), 'the packaging gate must normalize Windows slash direction before comparing reference paths');
   assert.ok(packageScript.includes("'fsr1-webgpu-summary.json'"), 'the packaging gate must require the live WebGPU integration summary');

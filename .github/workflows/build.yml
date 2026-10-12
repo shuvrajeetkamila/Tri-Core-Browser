@@ -77,6 +77,16 @@ jobs:
           $exeItem = Get-Item $exe
           if ($exeItem.Length -lt 30000000) { throw "Executable is unexpectedly small ($($exeItem.Length) bytes); refusing to upload a placeholder." }
           Write-Host "PASS: TriCoreBrowser.exe exists and is $($exeItem.Length) bytes."
+      - name: Upload unverified packaged executable for diagnostics
+        id: packaged_smoke_candidate
+        if: always() && steps.packaged_executable.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: TriCoreBrowser-Windows-x64-unverified-smoke-candidate
+          path: release/TriCoreBrowser.exe
+          if-no-files-found: error
+          retention-days: 30
       - name: Run packaged-app smoke test
         id: packaged_smoke
         shell: pwsh

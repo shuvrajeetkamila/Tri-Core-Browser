@@ -2,8 +2,8 @@
 
 **Recorded:** 2026-10-12
 **Branch:** `arena/66abfdc9-tri-core-browser`
-**Source identity:** current working changes based on commit `0c11d17d72804a7462eae70b9b791c106499ede7`; adapter-retry and software-classification fixes are uncommitted and await a packaged Windows rerun.
-**Latest packaged attempt:** [run 38227656945](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38227656945) built and launched source `0c11d17`; its live WebGPU path failed at adapter discovery before shader/dispatch validation.
+**Source identity:** working changes based on commit `31239756723c2c43872e03e6dc8a6ae2b72a14a5`; the packaged-executable candidate upload workflow change is uncommitted.
+**Latest packaged attempt:** [run 38228901586](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38228901586) built and launched source `3123975`; high-performance, low-power, default, and explicit fallback adapter requests all returned `null` before shader/dispatch validation.
 **Physical-GPU validation:** **NOT RUN**.
 
 Local checks are separate from target-runtime acceptance. Passing Node tests, a Vite renderer build, or parser-only WGSL acceptance does not prove WebGPU pipeline creation, dispatch, visible pixels, Windows packaging, or physical-GPU behavior. See [`FSR1_WEBGPU_ACCEPTANCE_LEDGER.md`](FSR1_WEBGPU_ACCEPTANCE_LEDGER.md) for gate-by-gate status.
@@ -18,23 +18,23 @@ Local checks are separate from target-runtime acceptance. Passing Node tests, a 
 | JavaScript/CommonJS syntax checks | **PASS** | `node --check` passed for project files under `app/diagnostics`, `electron`, `src`, `tests`, and `scripts`. WGSL template strings require a separate parser/runtime check. |
 | WGSL grammar parse | **PASS — parser-only** | Five modules in `app/diagnostics/fsr1-webgpu.js` parsed with ad-hoc `wgsl_reflect@1.6.0`: fullscreen vertex, game fragment, EASU compute, RCAS compute, and presentation fragment. It was not retained in `package.json`/lockfile and was removed by the subsequent clean `npm ci`. This is not Dawn/Tint semantic validation, pipeline creation, or GPU execution. |
 | Workflow/package metadata parse | **PASS** | `js-yaml` parsed `build.yml`, `fsr1-native-poc.yml`, and `release.yml`; `package.json` parsed as JSON. PowerShell execution is still a Windows-only gate. |
-| Immersive fullscreen source/accessibility tests | **PASS — static/unit checks** | Four tests cover the large toggle, visible exit control, F11 path, IPC sender/type validation, security settings, focus/layout restoration, and packaged smoke assertions. The packaged Windows fullscreen enter/exit smoke has **NOT RUN**. |
+| Immersive fullscreen source/accessibility tests | **PASS — static and packaged checks** | Unit tests cover the large toggle, visible exit control, F11, sender/type validation, security settings and layout restoration. Packaged Windows run 38228901586 also passed fullscreen entry/exit and active-view expansion/restoration. |
 | `git diff --check` | **PASS** | No whitespace errors at the time of the check. |
 | `npm audit --audit-level=high` | **PASS — threshold only** | Audit reports 8 moderate, 0 high, and 0 critical findings. Moderate findings remain unresolved; see below. |
-| Current-source Windows PowerShell/package execution | **NOT RUN locally** | This Linux host cannot execute the Windows PowerShell gate or the packaged Windows app. Current-source Actions validation is pending. |
+| Current-source Windows PowerShell/package execution | **PARTIAL — run 38228901586** | PowerShell packaging and executable validation passed on Windows Actions; the strict smoke then failed at WebGPU adapter discovery. This Linux host cannot execute the Windows PowerShell gate locally. |
 
 ## WebGPU and packaged-runtime acceptance
 
 | Gate | Result | Evidence / limits |
 | --- | --- | --- |
 | Game-owned FSR1 processing path | **Implemented in source; runtime UNVERIFIED** | The bundled sandboxed page owns a lower-resolution WebGPU target, separate EASU/RCAS compute pipelines, and a presentation pass. No CPU pixel readback feeds FSR. Source/static evidence is not runtime evidence. |
-| Adapter/device/shader/pipeline/resource lifecycle distinctions | **Implemented in source; runtime UNVERIFIED** | Snapshots/UI distinguish unavailable, adapter/device failure, shader/pipeline/resource failure, processing, output submission, screenshot-verified visible output, and device loss. No packaged runtime has exercised these states yet. |
+| Adapter/device/shader/pipeline/resource lifecycle distinctions | **PARTIAL — adapter discovery exercised** | Run 38228901586 recorded null from high-performance, low-power, default, and explicit fallback requests; later lifecycle states were not reached. The application preserves unsupported/failure distinction and includes per-request results in the failure snapshot. |
 | WGSL compilation and WebGPU pipeline creation | **NOT RUN in target runtime** | Only the parser-only check above has run. Dawn/Tint compilation and actual EASU/RCAS compute-pipeline creation require Windows packaged smoke. |
 | EASU/RCAS dispatch and processed queue completion | **NOT RUN in target runtime** | The Windows smoke requires at least three dispatches per compute pipeline and completed frames. No current-source dispatch count or GPU result exists. |
 | Numerical comparison of original target, EASU intermediate, and RCAS output | **PARTIAL** | Node unit tests pass with synthetic RGBA inputs, simple bilinear comparison, EASU/RCAS contribution/detail checks, malformed inputs, and flat-stage rejection. No actual GPU texture captures or numerical runtime report exists. The bilinear baseline is not an AMD shader-conformance oracle. |
 | Visible-canvas output screenshot comparison | **PARTIAL** | Node tests cover BGRA→RGBA conversion, capture scaling, sample matching, and insufficient-sample rejection. No packaged `capturePage()` image has been compared to actual frozen RCAS output yet. A completed queue alone is not accepted as pixel-level display proof. |
-| Active-core OS fullscreen enter/exit and layout restoration | **PASS — run 38227656945** | Packaged Windows smoke on source `0c11d17` entered/exited fullscreen and verified view expansion/restoration; unit tests cover keyboard/accessibility behavior. |
-| Current-source packaged Windows app and dual FSR smoke | **NOT RUN** | The Windows runner must separately validate the `capturePage()` PNG → native D3D12 WARP diagnostic and the game-owned WebGPU FSR path, then retain reports/captures. Prior Windows runs predate this WebGPU change. |
+| Active-core OS fullscreen enter/exit and layout restoration | **PASS — run 38228901586** | Packaged Windows smoke on source `3123975` entered/exited fullscreen and verified view expansion/restoration; unit tests cover keyboard/accessibility behavior. |
+| Packaged Windows app and dual FSR smoke | **PARTIAL — run 38228901586** | Packaging/executable validation, fullscreen, browser/WASM/HTTPS checks, and three changing `capturePage()` PNG frames through native D3D12 WARP passed on source `3123975`. Live WebGPU adapter discovery returned `null` for all four attempts; no shader, dispatch, numerical-output, or visible-canvas check ran. |
 | Physical GPU / vendor identity / hardware-mode run | **NOT RUN** | WARP/software adapters are not physical-GPU evidence. No named physical device has been tested. |
 | DLSS, arbitrary webpage/game support, general performance gain | **NOT IMPLEMENTED / UNSUPPORTED / NOT CLAIMED** | No Streamline/DLSS runtime is included; ordinary pages remain standard Chromium; no performance or general image-quality gain is inferred. |
 
