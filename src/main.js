@@ -541,7 +541,7 @@ function setPerformancePanelExpanded(expanded, { persist = true } = {}) {
 
 function syncGraphicsPreferenceControls() {
   document.querySelector('#graphics-selection').value = graphicsSelection;
-  document.querySelector('#graphics-priority').textContent = 'DLSS → FSR → WASM';
+  document.querySelector('#graphics-priority').textContent = 'DLSS → FSR → Chromium';
   document.querySelector('#graphics-mode-select').value = selectedMode;
   document.querySelector('#graphics-mode-select').disabled = graphicsSelection === 'auto';
 }
@@ -971,11 +971,14 @@ function renderPerformancePanel(state) {
   compactDot.dataset.state = state.stateClass || compactState;
   if (graphicsSelection === 'auto') {
     compactMode.textContent = `Automatic · ${displayNames[selectedMode]}`;
+    const wasmRuntime = graphicsCapabilities?.technologies?.wasm;
     compactDetail.textContent = selectedMode === 'wasm'
       ? 'WASM runtime verified; pages still use Chromium. No upscaling.'
-      : state.upscalerActive
-        ? `${state.state} · ${state.processedFrames} frame(s) confirmed.`
-        : `${state.state} · no unverified graphics path is enabled.`;
+      : selectedMode === 'standard' && wasmRuntime?.initialized
+        ? 'No compatible image upscaler; WASM runtime is available separately (no upscaling).'
+        : state.upscalerActive
+          ? `${state.state} · ${state.processedFrames} frame(s) confirmed.`
+          : `${state.state} · no unverified graphics path is enabled.`;
   } else {
     compactMode.textContent = `Manual · ${displayNames[selectedMode]}`;
     compactDetail.textContent = selectedMode === 'fsr' && state.upscalerActive

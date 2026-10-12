@@ -87,6 +87,13 @@ jobs:
           Add-Content -Path $smokeLog -Value "[workflow] Packaged process exit code: $($process.ExitCode)" -Encoding utf8
           if ($process.ExitCode -ne 0) { throw "Packaged browser smoke test exited with $($process.ExitCode)." }
           $smokeText = if (Test-Path $smokeLog) { Get-Content $smokeLog -Raw } else { '' }
+          if (-not $smokeText.Contains('[smoke] Independent WebGPU known-answer compute probe: PASS')) { throw 'Packaged smoke log does not contain the independent WebGPU known-answer compute result.' }
+          $computeProbePath = Join-Path $fsrSmokeOut 'webgpu-compute-smoke-summary.json'
+          if (-not (Test-Path $computeProbePath -PathType Leaf)) { throw 'Independent WebGPU known-answer compute summary was not produced.' }
+          $computeProbe = Get-Content $computeProbePath -Raw | ConvertFrom-Json
+          if ($computeProbe.status -ne 'PASS' -or $computeProbe.state -ne 'output-verified' -or $computeProbe.secureContext -ne $true -or $computeProbe.apiDetected -ne $true -or $computeProbe.deviceRequested -ne $true -or $computeProbe.shaderCompilationStatus -ne 'passed' -or $computeProbe.pipelineCreationStatus -ne 'passed' -or $computeProbe.resourceInitializationStatus -ne 'passed' -or $computeProbe.dispatches -ne 1 -or $computeProbe.queueCompleted -ne $true -or $computeProbe.expectedResult -ne 42 -or $computeProbe.readbackResult -ne 42 -or $computeProbe.readbackVerified -ne $true -or $computeProbe.physicalGpuValidation -ne 'NOT RUN') { throw "Independent WebGPU compute/readback test did not validate 19 + 23 = 42: $($computeProbe | ConvertTo-Json -Depth 8 -Compress)" }
+          $gpuSwitches = $computeProbe.launchDiagnostics.gpuRelatedSwitches
+          if ($gpuSwitches.'enable-unsafe-webgpu' -or $gpuSwitches.'ignore-gpu-blocklist' -or $gpuSwitches.'disable-gpu-driver-bug-workarounds' -or $gpuSwitches.'disable-gpu-sandbox' -or $gpuSwitches.'disable-gpu' -or $gpuSwitches.'disable-webgpu' -or ([string]$gpuSwitches.'disable-dawn-features' -match 'adapter_blocklist')) { throw 'WebGPU smoke was launched with an unsafe WebGPU, disabled GPU/sandbox, blocklist bypass, or driver-workaround override.' }
           if (-not $smokeText.Contains('[smoke] Active-core immersive fullscreen: PASS') -or -not $smokeText.Contains('[smoke] Immersive fullscreen exit: PASS')) { throw 'Packaged smoke log does not contain successful immersive fullscreen enter/exit and layout-restoration evidence.' }
           if (-not $smokeText.Contains('[smoke] Diagnostic-only WebContentsView WebGL2 capture')) { throw 'Packaged smoke log does not contain the diagnostic-only capturePage PNG → FSR1 evidence.' }
           $summaryPath = Join-Path $fsrSmokeOut 'browser-frame-smoke-summary.json'
@@ -153,6 +160,7 @@ jobs:
             'tricore-smoke.stdout.txt',
             'tricore-smoke.stderr.txt',
             'tricore-fsr-integration-smoke/browser-frame-smoke-summary.json',
+            'tricore-fsr-integration-smoke/webgpu-compute-smoke-summary.json',
             'tricore-fsr-integration-smoke/fsr1-webgpu-summary.json',
             'tricore-fsr-integration-smoke/packaged-smoke-failure-summary.json',
             'tricore-fsr-integration-smoke/fsr1-webgpu-visible-output.png'

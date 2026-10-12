@@ -13,12 +13,13 @@ test('performance panel has a native keyboard-operable disclosure button and lab
   assert.match(styles, /button:focus-visible[^\{]*\{[^}]*outline:/);
 });
 
-test('automatic priority remains DLSS → FSR → WASM while manual mode remains available', () => {
-  assert.match(html, /Fixed automatic priority: DLSS, then FSR, then WASM/);
-  assert.match(html, /<strong id="graphics-priority">DLSS → FSR → WASM<\/strong>/);
+test('automatic upscaler priority is DLSS then FSR, with Chromium fallback and WASM reported separately', () => {
+  assert.match(html, /Automatic upscaler priority: DLSS, then FSR; otherwise standard Chromium\. WASM is reported separately\./);
+  assert.match(html, /<strong id="graphics-priority">DLSS → FSR → Chromium<\/strong>/);
   assert.match(html, /<option value="manual">Manual override<\/option>/);
   assert.doesNotMatch(html, /fsr-first/);
   assert.match(main, /chooseAutomaticMode\(graphicsCapabilities\)/);
+  assert.match(main, /No compatible image upscaler; WASM runtime is available separately \(no upscaling\)\./);
 });
 
 test('FSR lab separates the live game-owned WebGPU path from the PNG screenshot diagnostic and exposes failure state', () => {

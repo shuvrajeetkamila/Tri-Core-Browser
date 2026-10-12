@@ -58,6 +58,16 @@ foreach ($frame in $fsrSummary.frames) {
 if (@($referencePaths | Sort-Object -Unique).Count -ne 3) {
   throw 'The three browser frames must retain three distinct bilinear-reference PNG paths.'
 }
+$webGpuComputeSummaryPath = Join-Path $env:TRICORE_FSR_SMOKE_OUT 'webgpu-compute-smoke-summary.json'
+if (-not (Test-Path $webGpuComputeSummaryPath -PathType Leaf)) { throw 'Independent WebGPU known-answer compute summary is missing.' }
+$webGpuComputeSummary = Get-Content $webGpuComputeSummaryPath -Raw | ConvertFrom-Json
+if ($webGpuComputeSummary.status -ne 'PASS' -or $webGpuComputeSummary.state -ne 'output-verified' -or $webGpuComputeSummary.secureContext -ne $true -or $webGpuComputeSummary.apiDetected -ne $true -or $webGpuComputeSummary.deviceRequested -ne $true -or $webGpuComputeSummary.shaderCompilationStatus -ne 'passed' -or $webGpuComputeSummary.pipelineCreationStatus -ne 'passed' -or $webGpuComputeSummary.resourceInitializationStatus -ne 'passed' -or $webGpuComputeSummary.dispatches -ne 1 -or $webGpuComputeSummary.queueCompleted -ne $true -or $webGpuComputeSummary.expectedResult -ne 42 -or $webGpuComputeSummary.readbackResult -ne 42 -or $webGpuComputeSummary.readbackVerified -ne $true -or $webGpuComputeSummary.physicalGpuValidation -ne 'NOT RUN') {
+  throw 'Independent WebGPU compute/readback evidence does not verify 19 + 23 = 42 and honest physical-GPU status.'
+}
+$webGpuComputeSwitches = $webGpuComputeSummary.launchDiagnostics.gpuRelatedSwitches
+if ($webGpuComputeSwitches.'enable-unsafe-webgpu' -or $webGpuComputeSwitches.'ignore-gpu-blocklist' -or $webGpuComputeSwitches.'disable-gpu-driver-bug-workarounds' -or $webGpuComputeSwitches.'disable-gpu-sandbox' -or $webGpuComputeSwitches.'disable-gpu' -or $webGpuComputeSwitches.'disable-webgpu' -or ([string]$webGpuComputeSwitches.'disable-dawn-features' -match 'adapter_blocklist')) {
+  throw 'Independent WebGPU smoke used an unsafe WebGPU, disabled GPU/sandbox, blocklist bypass, or driver-workaround override.'
+}
 $webGpuSummaryPath = Join-Path $env:TRICORE_FSR_SMOKE_OUT 'fsr1-webgpu-summary.json'
 if (-not (Test-Path $webGpuSummaryPath -PathType Leaf)) { throw 'Live WebGPU FSR1 integration summary is missing.' }
 $webGpuSummary = Get-Content $webGpuSummaryPath -Raw | ConvertFrom-Json

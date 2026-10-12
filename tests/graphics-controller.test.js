@@ -46,21 +46,23 @@ test('detects GPU vendor/model/driver without treating identity as feature suppo
   assert.equal(report.technologies.dlss.processedFrames, 0);
 });
 
-test('default automatic choice is the verified WASM runtime, never an upscaler by GPU label', () => {
+test('automatic mode stays on standard Chromium when no compatible image upscaler exists and reports WASM separately', () => {
   const report = makeReport({
     gpuDevices: [{ vendorId: 4318, vendor: 'NVIDIA', name: 'GeForce RTX example', active: true }],
   });
   assert.equal(report.gpu.nvidiaDetected, true);
-  assert.equal(chooseAutomaticMode(report), 'wasm');
-  const state = resolveGraphicsMode('wasm', { capabilities: report });
-  assert.equal(state.status, 'initialized');
-  assert.equal(state.effectiveMode, 'standard');
-  assert.equal(state.upscalerActive, false);
-  assert.equal(state.processingFrames, false);
-  assert.match(state.message, /not an image upscaler/);
+  assert.equal(chooseAutomaticMode(report), 'standard');
+  assert.equal(report.technologies.wasm.initialized, true);
+  assert.equal(report.technologies.wasm.reason.includes('not an image upscaler'), true);
+  const manualWasm = resolveGraphicsMode('wasm', { capabilities: report });
+  assert.equal(manualWasm.status, 'initialized');
+  assert.equal(manualWasm.effectiveMode, 'standard');
+  assert.equal(manualWasm.upscalerActive, false);
+  assert.equal(manualWasm.processingFrames, false);
+  assert.match(manualWasm.message, /not an image upscaler/);
 });
 
-test('automatic selection always follows DLSS → FSR → WASM and skips uninitialized backends', () => {
+test('automatic selection follows DLSS → FSR and falls back to Chromium when both are unavailable', () => {
   const bothInitialized = makeReport({
     gpuDevices: [
       { vendorId: '0x10de', vendor: 'NVIDIA', name: 'NVIDIA test GPU', active: true },
@@ -111,7 +113,7 @@ test('runtime error is FAILED and takes precedence over initialized/active flags
   });
   assert.equal(report.technologies.fsr.state, 'FAILED');
   assert.equal(report.technologies.fsr.active, false);
-  assert.equal(chooseAutomaticMode(report), 'wasm');
+  assert.equal(chooseAutomaticMode(report), 'standard');
 });
 
 test('WebGPU initialization failures retain their stage and safely fall back without active-processing claims', () => {
@@ -168,7 +170,7 @@ test('a completed one-shot frame counter is historical evidence, not an active s
   assert.equal(feature.processedFrames, 3);
   assert.equal(feature.active, false);
   assert.equal(feature.processingFrames, false);
-  assert.equal(chooseAutomaticMode(report), 'wasm');
+  assert.equal(chooseAutomaticMode(report), 'standard');
   const state = resolveGraphicsMode('fsr', { capabilities: report });
   assert.equal(state.effectiveMode, 'standard');
   assert.equal(state.upscalerActive, false);
@@ -197,7 +199,7 @@ test('manual FSR can report a verified game-owned WebGPU scene while Auto exclud
   });
   assert.equal(report.technologies.fsr.state, 'PROCESSING FRAMES');
   assert.equal(report.technologies.fsr.queueCompletionWallMs, 3.25);
-  assert.equal(chooseAutomaticMode(report), 'wasm');
+  assert.equal(chooseAutomaticMode(report), 'standard');
 
   const manual = resolveGraphicsMode('fsr', { capabilities: report });
   assert.equal(manual.effectiveMode, 'fsr');

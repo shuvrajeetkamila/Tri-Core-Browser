@@ -17,7 +17,7 @@ export const GRAPHICS_STATES = Object.freeze([
   'UNSUPPORTED',
 ]);
 
-const AUTOMATIC_PRIORITY = Object.freeze(['dlss', 'fsr', 'wasm']);
+const AUTOMATIC_PRIORITY = Object.freeze(['dlss', 'fsr']);
 
 const MODE_IDS = new Set(GRAPHICS_MODES.map(({ id }) => id));
 const STANDARD_FALLBACK = 'Standard Chromium rendering remains active; no upscaler is applied.';
@@ -188,7 +188,7 @@ export function detectGraphicsCapabilities({
         reason: wasmLifecycle.failed
           ? wasmLifecycle.error || 'The Chromium WebAssembly capability probe failed.'
           : wasmLifecycle.initialized
-            ? 'A small module compiled and add(19, 23) returned 42. WASM is available; this is not image upscaling.'
+            ? 'A small module compiled and add(19, 23) returned 42. WASM is available; it is not an image upscaler.'
             : 'WebAssembly capability has not been verified in this renderer.',
         backend: 'Chromium V8 WebAssembly; page rendering remains Chromium',
       }),
@@ -204,7 +204,7 @@ function isUsable(feature) {
   return isInitializedCompatible(feature) && feature.automaticEligible !== false;
 }
 
-/** Return the first initialized, compatible implementation in fixed DLSS → FSR → WASM order. */
+/** Select only a usable image upscaler; otherwise leave rendering in standard Chromium and report WASM separately. */
 export function chooseAutomaticMode(capabilities) {
   const technologies = capabilities?.technologies || {};
   for (const id of AUTOMATIC_PRIORITY) {

@@ -101,7 +101,7 @@
           <div class="performance-panel-content" id="performance-panel-content" hidden>
             <div class="performance-controlbar">
               <label class="performance-control"><span>Selection policy</span><select id="graphics-selection"><option value="auto">Automatic</option><option value="manual">Manual override</option></select></label>
-              <div class="performance-control performance-priority" aria-label="Fixed automatic priority: DLSS, then FSR, then WASM"><span>Automatic priority</span><strong id="graphics-priority">DLSS → FSR → WASM</strong></div>
+              <div class="performance-control performance-priority" aria-label="Automatic upscaler priority: DLSS, then FSR; otherwise standard Chromium. WASM is reported separately."><span>Automatic priority</span><strong id="graphics-priority">DLSS → FSR → Chromium</strong></div>
               <label class="performance-control"><span>Requested mode</span><select id="graphics-mode-select"><option value="wasm">WASM runtime · no upscaling</option><option value="dlss">NVIDIA DLSS</option><option value="fsr">AMD FSR 1</option><option value="hybrid">Hybrid policy</option><option value="standard">Standard Chromium</option></select></label>
               <button class="secondary-button performance-run-button" type="button" id="performance-wasm-run">Run WASM test</button>
               <button class="secondary-button performance-diagnostics-button" type="button" id="performance-diagnostics">Diagnostics</button>
