@@ -62,14 +62,11 @@ async function runProbeInMockedRenderer({ requestAdapter, readbackValue = 42 } =
 
 for (const workflowName of ['build.yml', 'release.yml']) {
   const workflow = fs.readFileSync(new URL(`../.github/workflows/${workflowName}`, import.meta.url), 'utf8');
-  test(`${workflowName} requires independent packaged WebGPU known-answer evidence`, () => {
-    assert.match(workflow, /Independent WebGPU known-answer compute probe: PASS/);
+  test(`${workflowName} invokes shared packaged WebGPU acceptance validation with an explicit policy`, () => {
+    assert.match(workflow, /validate-packaged-smoke\.cjs/);
+    assert.match(workflow, /--policy (optional|required)/);
     assert.match(workflow, /webgpu-compute-smoke-summary\.json/);
-    assert.match(workflow, /\$computeProbe\.readbackResult -ne 42/);
-    assert.match(workflow, /disable-dawn-features/);
-    assert.match(workflow, /adapter_blocklist/);
-    assert.match(workflow, /ignore-gpu-blocklist/);
-    assert.match(workflow, /disable-gpu-driver-bug-workarounds/);
+    assert.match(workflow, /packaged-smoke-summary\.json/);
   });
 }
 
@@ -173,7 +170,7 @@ test('mocked wrong compute output fails readback verification', async () => {
 test('packaged smoke runs the independent probe in a hidden sandboxed BrowserWindow and saves structured diagnostics', () => {
   assert.match(main, /WEBGPU_COMPUTE_SMOKE_PATH = path\.join\(__dirname, '\.\.', 'app', 'diagnostics', 'webgpu-compute-smoke\.html'\)/);
   assert.match(main, /new BrowserWindow\(\{[\s\S]*?show: false,[\s\S]*?contextIsolation: true,[\s\S]*?nodeIntegration: false,[\s\S]*?sandbox: true,[\s\S]*?webSecurity: true/);
-  assert.match(main, /runIndependentWebGpuComputeSmoke\(\)/);
+  assert.match(main, /runIndependentWebGpuComputeSmoke\(initialGraphicsDiagnostics\)/);
   assert.match(main, /webgpu-compute-smoke-summary\.json/);
   assert.match(main, /webgpu-independent-compute-known-answer/);
   assert.match(main, /app\.commandLine\.hasSwitch\(name\)/);

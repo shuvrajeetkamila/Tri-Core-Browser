@@ -33,8 +33,19 @@ if ($env:TRICORE_SMOKE_TEST -ne 'PASS') {
   throw 'The tested-package workflow must mark TRICORE_SMOKE_TEST=PASS before assembling a distribution.'
 }
 if ($env:TRICORE_FSR_INTEGRATION_SMOKE -ne 'PASS' -or -not $env:TRICORE_FSR_SMOKE_OUT) {
-  throw 'Both packaged FSR1 integration smoke paths must pass before assembling a distribution.'
+  throw 'A required physical-GPU packaged FSR1 integration PASS is required before assembling a distribution.'
 }
+if ($env:TRICORE_GPU_TEST_MODE -ne 'required') {
+  throw 'Distribution assembly is restricted to TRICORE_GPU_TEST_MODE=required; optional or hosted WARP checks are not release evidence.'
+}
+$packagedSmokeSummaryPath = Join-Path $env:TRICORE_FSR_SMOKE_OUT 'packaged-smoke-summary.json'
+if (-not (Test-Path $packagedSmokeSummaryPath -PathType Leaf)) { throw 'The packaged smoke acceptance summary is missing.' }
+$packagedSmokeSummary = Get-Content $packagedSmokeSummaryPath -Raw | ConvertFrom-Json
+if ($packagedSmokeSummary.status -ne 'PASS' -or $packagedSmokeSummary.gpuTestPolicy -ne 'required' -or $packagedSmokeSummary.webGpuAcceptance.status -ne 'PASS' -or $packagedSmokeSummary.webGpuAcceptance.required -ne $true -or $packagedSmokeSummary.webGpuAcceptance.physicalGpuValidation -ne 'PASS' -or $packagedSmokeSummary.physicalGpuValidation -ne 'PASS' -or $packagedSmokeSummary.releaseEligible -ne $true) {
+  throw 'The package summary does not prove required live FSR1 and separately validated physical-GPU acceptance.'
+}
+& node (Join-Path $root 'scripts/validate-packaged-smoke.cjs') --policy required --directory $env:TRICORE_FSR_SMOKE_OUT
+if ($LASTEXITCODE -ne 0) { throw 'Strict packaged-smoke evidence validation failed during distribution assembly.' }
 $fsrSmokeRoot = Join-Path $env:TRICORE_FSR_SMOKE_OUT 'browser-frame-smoke-summary.json'
 if (-not (Test-Path $fsrSmokeRoot -PathType Leaf)) { throw 'Browser-frame FSR1 smoke summary is missing.' }
 $fsrSummary = Get-Content $fsrSmokeRoot -Raw | ConvertFrom-Json
@@ -64,16 +75,32 @@ $webGpuComputeSummary = Get-Content $webGpuComputeSummaryPath -Raw | ConvertFrom
 if ($webGpuComputeSummary.status -ne 'PASS' -or $webGpuComputeSummary.state -ne 'output-verified' -or $webGpuComputeSummary.secureContext -ne $true -or $webGpuComputeSummary.apiDetected -ne $true -or $webGpuComputeSummary.deviceRequested -ne $true -or $webGpuComputeSummary.shaderCompilationStatus -ne 'passed' -or $webGpuComputeSummary.pipelineCreationStatus -ne 'passed' -or $webGpuComputeSummary.resourceInitializationStatus -ne 'passed' -or $webGpuComputeSummary.dispatches -ne 1 -or $webGpuComputeSummary.queueCompleted -ne $true -or $webGpuComputeSummary.expectedResult -ne 42 -or $webGpuComputeSummary.readbackResult -ne 42 -or $webGpuComputeSummary.readbackVerified -ne $true -or $webGpuComputeSummary.physicalGpuValidation -ne 'NOT RUN') {
   throw 'Independent WebGPU compute/readback evidence does not verify 19 + 23 = 42 and honest physical-GPU status.'
 }
+if ($webGpuComputeSummary.adapterInfo.softwareAdapter -ne $false -or $webGpuComputeSummary.adapterInfo.exposed -ne $true) { throw 'Required independent WebGPU compute did not use a classified non-software adapter.' }
+$computePhysicalDevices = @($webGpuComputeSummary.graphicsEnvironment.chromiumGpuDevices | Where-Object {
+  $_.active -eq $true -and -not [string]::IsNullOrWhiteSpace([string]$_.driverVersion) -and
+  (([string]$_.vendor + ' ' + [string]$_.name) -notmatch '(?i)\bwarp\b|swiftshader|software raster|basic render|llvmpipe')
+})
+if ($computePhysicalDevices.Count -lt 1) { throw 'Known-answer compute has no active non-software Chromium device with driver evidence.' }
+$computeAdapterDescription = @($webGpuComputeSummary.adapterInfo.vendor, $webGpuComputeSummary.adapterInfo.architecture, $webGpuComputeSummary.adapterInfo.device, $webGpuComputeSummary.adapterInfo.description) -join ' '
+if ($computeAdapterDescription -match '(?i)\bwarp\b|swiftshader|software raster|basic render|llvmpipe') { throw 'Known-answer compute used a software adapter, not a physical GPU.' }
 $webGpuComputeSwitches = $webGpuComputeSummary.launchDiagnostics.gpuRelatedSwitches
-if ($webGpuComputeSwitches.'enable-unsafe-webgpu' -or $webGpuComputeSwitches.'ignore-gpu-blocklist' -or $webGpuComputeSwitches.'disable-gpu-driver-bug-workarounds' -or $webGpuComputeSwitches.'disable-gpu-sandbox' -or $webGpuComputeSwitches.'disable-gpu' -or $webGpuComputeSwitches.'disable-webgpu' -or ([string]$webGpuComputeSwitches.'disable-dawn-features' -match 'adapter_blocklist')) {
+if ($webGpuComputeSwitches.'enable-unsafe-webgpu' -or $webGpuComputeSwitches.'ignore-gpu-blocklist' -or $webGpuComputeSwitches.'disable-gpu-driver-bug-workarounds' -or $webGpuComputeSwitches.'disable-gpu-sandbox' -or $webGpuComputeSwitches.'disable-gpu' -or $webGpuComputeSwitches.'disable-webgpu' -or ([string]$webGpuComputeSwitches.'disable-dawn-features' -match 'adapter_blocklist|allow_unsafe_apis') -or ([string]$webGpuComputeSwitches.'enable-dawn-features' -match 'allow_unsafe_apis') -or ([string]$webGpuComputeSwitches.'disable-features' -match '(^|,|\s)webgpu(,|\s|$)')) {
   throw 'Independent WebGPU smoke used an unsafe WebGPU, disabled GPU/sandbox, blocklist bypass, or driver-workaround override.'
 }
 $webGpuSummaryPath = Join-Path $env:TRICORE_FSR_SMOKE_OUT 'fsr1-webgpu-summary.json'
 if (-not (Test-Path $webGpuSummaryPath -PathType Leaf)) { throw 'Live WebGPU FSR1 integration summary is missing.' }
 $webGpuSummary = Get-Content $webGpuSummaryPath -Raw | ConvertFrom-Json
 if ($webGpuSummary.status -ne 'PASS' -or $webGpuSummary.api -ne 'WebGPU' -or $webGpuSummary.readbackForProcessing -ne $false -or $webGpuSummary.physicalGpuValidation -ne 'NOT RUN' -or $webGpuSummary.processedFrames -lt 3 -or $webGpuSummary.input.width -ge $webGpuSummary.output.width -or $webGpuSummary.input.height -ge $webGpuSummary.output.height -or -not $webGpuSummary.timingDefinition.Contains('not a GPU timestamp')) {
-  throw 'Live WebGPU FSR1 summary does not validate three visible GPU-processed frames, increased output dimensions, readback-free processing, and honest timing/physical-GPU status.'
+  throw 'Live WebGPU FSR1 summary does not validate three visible GPU-processed frames, increased output dimensions, readback-free processing, and distinct per-run physical-GPU status.'
 }
+if ($webGpuSummary.softwareAdapter -ne $false -or $webGpuSummary.adapterInfoAvailable -ne $true) { throw 'Required FSR1 run did not identify a non-software WebGPU adapter.' }
+$adapterDescription = @($webGpuSummary.adapter.vendor, $webGpuSummary.adapter.architecture, $webGpuSummary.adapter.device, $webGpuSummary.adapter.description) -join ' '
+if ($adapterDescription -match '(?i)\bwarp\b|swiftshader|software raster|basic render|llvmpipe') { throw 'A software adapter cannot satisfy the physical-GPU distribution gate.' }
+$activePhysicalDevices = @($webGpuSummary.graphicsEnvironment.chromiumGpuDevices | Where-Object {
+  $_.active -eq $true -and -not [string]::IsNullOrWhiteSpace([string]$_.driverVersion) -and
+  (([string]$_.vendor + ' ' + [string]$_.name) -notmatch '(?i)\bwarp\b|swiftshader|software raster|basic render|llvmpipe')
+})
+if ($activePhysicalDevices.Count -lt 1) { throw 'No active non-software Chromium GPU device with a driver version was recorded.' }
 if ($webGpuSummary.lifecycle.adapterDetected -ne $true -or $webGpuSummary.lifecycle.shaderCompilationStatus -ne 'passed' -or $webGpuSummary.lifecycle.pipelineCreationStatus -ne 'passed' -or $webGpuSummary.lifecycle.resourceInitializationStatus -ne 'passed' -or $webGpuSummary.lifecycle.easuComputePipelineInitialized -ne $true -or $webGpuSummary.lifecycle.rcasComputePipelineInitialized -ne $true -or $webGpuSummary.lifecycle.presentationPipelineInitialized -ne $true -or $webGpuSummary.lifecycle.outputSubmittedToVisibleCanvas -ne $true) {
   throw 'Live WebGPU FSR1 must report adapter detection, successful shaders/resources, EASU/RCAS compute and presentation pipeline initialization, and output submission.'
 }
@@ -113,8 +140,8 @@ $packageTests = @"
 
 Source commit: $commit
 Windows x64 portable packaging: PASS.
-Packaged application launch; local HTTP, JavaScript, WebAssembly, all five graphics-mode controls, tab lifecycle, active-core immersive fullscreen enter/exit with browser-control restoration, the screenshot diagnostic, and the WebGPU FSR1 scene smoke: PASS (the required packaged process exited with code 0).
-Live game-side FSR1 evidence: the bundled WebGPU scene rendered at a smaller browser-owned GPU color target, processed at least three frames through AMD FSR 1.0.2 EASU + RCAS WGSL passes, and displayed the result through the visible canvas without CPU readback in the processing path. The one saved `capturePage()` PNG is post-processing CI evidence only. Physical-GPU validation remains NOT RUN.
+Packaged application launch; local HTTP, JavaScript, WebAssembly, all five graphics-mode controls, tab lifecycle, active-core immersive fullscreen enter/exit with browser-control restoration, the screenshot diagnostic, and the WebGPU FSR1 scene smoke: PASS (required packaged process and physical-GPU gate).
+Live game-side FSR1 evidence: the bundled WebGPU scene rendered at a smaller browser-owned GPU color target, processed at least three frames through AMD FSR 1.0.2 EASU + RCAS WGSL passes, and displayed the result through the visible canvas without CPU readback in the processing path. The one saved `capturePage()` PNG is post-processing CI evidence only. Physical-GPU validation: PASS on the configured Windows GPU runner; see packaged-smoke-summary.json and fsr1-webgpu-summary.json for separate adapter/driver evidence.
 Separate PNG diagnostic: three changing frames at three capture resolutions from the bundled sandboxed WebGL2 `WebContentsView` were captured by Electron `capturePage()` PNG, processed by the D3D12 FSR1 helper on WARP software, and returned as PNG previews. It remains diagnostic only and is not live integration, zero-copy, arbitrary-page processing, or physical-GPU evidence.
 External HTTPS connectivity: see the package-root `WINDOWS_SMOKE_TEST.txt`; network unavailability is recorded as blocked without bypassing certificate validation.
 See `diagnostics/fsr1-integration-smoke/`, the commit-specific root `BUILD_REPORT.txt`, and `WINDOWS_SMOKE_TEST.txt` for captures/reports. DLSS remains not implemented; ordinary browser pages retain standard Chromium rendering unless a game integrates the bounded WebGPU path explicitly.
@@ -138,7 +165,7 @@ Packaged runtime test: PASS for local HTTP page, JavaScript, WASM add(19,23)=42,
 WASM: PASS for the controlled V8 diagnostic; this is not a webpage upscaling feature.
 FSR1 live vertical slice: PASS for the bundled WebGPU game-owned render target → AMD FSR 1.0.2 EASU + RCAS WGSL passes → visible WebGPU canvas, with at least three completed frames and no CPU readback in the processing path. The post-processing screenshot and summary are in diagnostics/fsr1-integration-smoke/; queue-completion wall timings are not GPU timestamps.
 FSR1 PNG diagnostic: PASS only for three changing WebGL2 WebContentsView capturePage PNG frames at three resolutions processed by the separate D3D12 helper on WARP software. This route remains screenshot/readback diagnostic only.
-FSR limits: the live vertical slice is opt-in and applies only to the bundled game scene or games that explicitly integrate the game-owned WebGPU path; it does not intercept arbitrary pages or the Chromium compositor. Physical-GPU validation is NOT RUN; no performance gain is claimed. WARP remains software-only.
+FSR limits: the live vertical slice is opt-in and applies only to the bundled game scene or games that explicitly integrate the game-owned WebGPU path; it does not intercept arbitrary pages or the Chromium compositor. Physical-GPU validation: PASS on the configured Windows GPU runner with an active driver; WARP remains software-only and is not that evidence. No performance gain is claimed.
 DLSS: NOT IMPLEMENTED; no Streamline integration, authorized runtime, or native page-frame bridge is shipped.
 Ordinary web pages: standard Chromium rendering only; no page upscaling is enabled.
 Executable in this package: TriCoreBrowser.exe at the portable ZIP root ($exeBytes bytes)

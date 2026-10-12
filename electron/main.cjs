@@ -31,6 +31,10 @@ const {
   bitmapToRgba,
   compareVisibleCanvasSamples,
 } = require('./fsr1-webgpu-validation.cjs');
+const {
+  normalizeGpuTestPolicy,
+  classifyWebGpuSmoke,
+} = require('./webgpu-smoke-policy.cjs');
 
 const CORE_COUNT = 3;
 const MAX_TABS_PER_CORE = 20;
@@ -710,6 +714,167 @@ function fsrCaptureOutputRoot() {
   return path.join(app.getPath('userData'), 'fsr1-browser-frame-captures');
 }
 
+function currentGpuTestPolicy() {
+  const configured = process.env.TRICORE_GPU_TEST_MODE;
+  const legacyRequired = process.env.TRICORE_REQUIRE_FSR_INTEGRATION_SMOKE === 'PASS';
+  return normalizeGpuTestPolicy(configured || (legacyRequired ? 'required' : 'off'));
+}
+
+function writeSmokeJsonReport(fileName, report) {
+  try {
+    const outputDirectory = fsrCaptureOutputRoot();
+    const outputPath = path.join(outputDirectory, fileName);
+    fs.mkdirSync(outputDirectory, { recursive: true });
+    fs.writeFileSync(outputPath, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
+    return { path: outputPath, error: '' };
+  } catch (error) {
+    return { path: '', error: clampText(error?.message || 'Smoke report could not be written.', 500) };
+  }
+}
+
+function createFsrUnavailableSummary(snapshot, policy, computeProbe, graphicsEnvironment) {
+  const failureStage = snapshot?.failureStage || (snapshot?.apiDetected === false ? 'webgpu-api-detection' : 'adapter-discovery');
+  const status = policy === 'required' ? 'UNSUPPORTED' : 'SKIPPED';
+  const notRun = 'NOT RUN';
+  const stageStatus = (value) => !value || value === 'pending' ? notRun : value;
+  return {
+    status,
+    required: policy === 'required',
+    capabilityStatus: 'UNSUPPORTED',
+    reasonCode: 'NO_COMPATIBLE_ADAPTER',
+    reason: 'No compatible WebGPU adapter was returned. The GPU scene did not compile shaders, dispatch, read back for processing, or process frames.',
+    failureStage,
+    api: snapshot?.api || (failureStage === 'webgpu-api-detection' ? 'UNAVAILABLE' : 'WebGPU'),
+    apiDetected: failureStage !== 'webgpu-api-detection',
+    implementation: snapshot?.implementation || 'AMD FidelityFX FSR1 WebGPU scene',
+    scope: snapshot?.scope || 'Bundled diagnostic scene only; not arbitrary websites or games.',
+    adapter: snapshot?.adapter || null,
+    adapterInfoAvailable: snapshot?.adapterInfoAvailable === true,
+    adapterRequestPath: snapshot?.adapterRequestPath || '',
+    adapterRequestResults: snapshot?.adapterRequestResults || [],
+    softwareAdapter: snapshot?.softwareAdapter ?? null,
+    physicalGpuValidation: 'NOT RUN',
+    readbackForProcessing: false,
+    processedFrames: 0,
+    dispatch: { easuDispatches: 0, rcasDispatches: 0 },
+    input: { width: Number(snapshot?.inputWidth) || 0, height: Number(snapshot?.inputHeight) || 0 },
+    output: { width: Number(snapshot?.outputWidth) || 0, height: Number(snapshot?.outputHeight) || 0 },
+    lifecycle: {
+      state: snapshot?.state || 'unsupported',
+      adapterDetected: snapshot?.adapterDetected === true,
+      shaderCompilationStatus: stageStatus(snapshot?.shaderCompilationStatus),
+      pipelineCreationStatus: stageStatus(snapshot?.pipelineCreationStatus),
+      resourceInitializationStatus: stageStatus(snapshot?.resourceInitializationStatus),
+      easuComputePipelineInitialized: snapshot?.easuComputePipelineInitialized === true,
+      rcasComputePipelineInitialized: snapshot?.rcasComputePipelineInitialized === true,
+      presentationPipelineInitialized: snapshot?.presentationPipelineInitialized === true,
+      outputSubmittedToVisibleCanvas: snapshot?.presentedOutput === true,
+      visibleCanvasScreenshotCompared: false,
+      visibleOutputVerified: false,
+      framesCompleted: 0,
+    },
+    imageValidation: {
+      status: notRun,
+      readbackFeedsProcessing: false,
+      motion: { changed: false },
+      stageComparison: { status: notRun, checks: {} },
+      visibleCanvas: { status: notRun },
+    },
+    independentComputeProbe: computeProbe || { status: notRun, physicalGpuValidation: 'NOT RUN' },
+    graphicsEnvironment: graphicsEnvironment || null,
+    runtime: { electron: process.versions.electron, chromium: process.versions.chrome, node: process.versions.node },
+  };
+}
+
+function createComputeNotRunReport() {
+  return {
+    status: 'NOT RUN',
+    state: 'not-run',
+    failureStage: '',
+    apiDetected: false,
+    adapterRequestResults: [],
+    deviceRequested: false,
+    shaderCompilationStatus: 'NOT RUN',
+    pipelineCreationStatus: 'NOT RUN',
+    resourceInitializationStatus: 'NOT RUN',
+    dispatches: 0,
+    queueCompleted: false,
+    expectedResult: 42,
+    readbackResult: null,
+    readbackVerified: false,
+    physicalGpuValidation: 'NOT RUN',
+    launchDiagnostics: getGraphicsLaunchDiagnostics(),
+    runtime: { electron: process.versions.electron, chromium: process.versions.chrome, node: process.versions.node },
+  };
+}
+
+function createFsrNotRunSummary(policy, reason = 'The bundled WebGPU FSR1 scene was not run.') {
+  return {
+    status: 'NOT RUN',
+    required: policy === 'required',
+    capabilityStatus: 'NOT RUN',
+    reasonCode: 'FSR_TEST_NOT_RUN',
+    reason,
+    failureStage: '',
+    physicalGpuValidation: 'NOT RUN',
+    readbackForProcessing: false,
+    processedFrames: 0,
+    dispatch: { easuDispatches: 0, rcasDispatches: 0 },
+    lifecycle: {
+      state: 'not-run',
+      adapterDetected: false,
+      shaderCompilationStatus: 'NOT RUN',
+      pipelineCreationStatus: 'NOT RUN',
+      resourceInitializationStatus: 'NOT RUN',
+      easuComputePipelineInitialized: false,
+      rcasComputePipelineInitialized: false,
+      presentationPipelineInitialized: false,
+      outputSubmittedToVisibleCanvas: false,
+      visibleCanvasScreenshotCompared: false,
+      visibleOutputVerified: false,
+      framesCompleted: 0,
+    },
+    imageValidation: { status: 'NOT RUN', readbackFeedsProcessing: false },
+  };
+}
+
+function createFsrFailureSummary(snapshot, policy, error, failureStage, computeProbe, graphicsEnvironment) {
+  if (snapshot?.unsupported) return createFsrUnavailableSummary(snapshot, policy, computeProbe, graphicsEnvironment);
+  return {
+    ...createFsrNotRunSummary(policy, 'The bundled WebGPU FSR1 scene started but did not complete the required output evidence.'),
+    status: 'FAIL',
+    capabilityStatus: 'FAIL',
+    reasonCode: 'FSR_RUNTIME_FAILURE',
+    reason: clampText(error?.message || String(error || 'WebGPU FSR1 integration failed.'), 1600),
+    failureStage,
+    lifecycle: {
+      ...createFsrNotRunSummary(policy).lifecycle,
+      state: snapshot?.state || 'failed',
+      adapterDetected: snapshot?.adapterDetected === true,
+      shaderCompilationStatus: snapshot?.shaderCompilationStatus || 'NOT RUN',
+      pipelineCreationStatus: snapshot?.pipelineCreationStatus || 'NOT RUN',
+      resourceInitializationStatus: snapshot?.resourceInitializationStatus || 'NOT RUN',
+      easuComputePipelineInitialized: snapshot?.easuComputePipelineInitialized === true,
+      rcasComputePipelineInitialized: snapshot?.rcasComputePipelineInitialized === true,
+      presentationPipelineInitialized: snapshot?.presentationPipelineInitialized === true,
+      framesCompleted: Number(snapshot?.framesCompleted) || 0,
+    },
+    processedFrames: Number(snapshot?.framesCompleted) || 0,
+    dispatch: {
+      easuDispatches: Number(snapshot?.easuDispatches) || 0,
+      rcasDispatches: Number(snapshot?.rcasDispatches) || 0,
+    },
+    adapter: snapshot?.adapter || null,
+    adapterInfoAvailable: snapshot?.adapterInfoAvailable === true,
+    adapterRequestPath: snapshot?.adapterRequestPath || '',
+    adapterRequestResults: snapshot?.adapterRequestResults || [],
+    softwareAdapter: snapshot?.softwareAdapter ?? null,
+    physicalGpuValidation: 'NOT RUN',
+    independentComputeProbe: computeProbe || { status: 'NOT RUN', physicalGpuValidation: 'NOT RUN' },
+    graphicsEnvironment: graphicsEnvironment || null,
+  };
+}
+
 function sendFsrProgress(payload) {
   if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
     mainWindow.webContents.send('browser:fsr-progress', payload);
@@ -1333,7 +1498,7 @@ function getGraphicsLaunchDiagnostics() {
   };
 }
 
-async function runIndependentWebGpuComputeSmoke() {
+async function runIndependentWebGpuComputeSmoke(graphicsDiagnostics = null) {
   let probeWindow = null;
   let report = null;
   let failure = '';
@@ -1402,6 +1567,11 @@ async function runIndependentWebGpuComputeSmoke() {
     runtime: { electron: process.versions.electron, chromium: process.versions.chrome, node: process.versions.node },
     windowSecurity: { sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true },
     launchDiagnostics: getGraphicsLaunchDiagnostics(),
+    graphicsEnvironment: graphicsDiagnostics ? {
+      chromiumGraphicsImplementation: graphicsDiagnostics.graphicsApiDetails || null,
+      chromiumGpuDevices: graphicsDiagnostics.gpuDevices || null,
+      nativeD3D12Adapters: graphicsDiagnostics.nativeFsrAdapters || null,
+    } : null,
     physicalGpuValidation: 'NOT RUN',
   };
   try {
@@ -1418,13 +1588,27 @@ async function runIndependentWebGpuComputeSmoke() {
 
 async function runSmokeTest() {
   const startedAt = Date.now();
+  const gpuTestPolicy = currentGpuTestPolicy();
   let localServer;
   let smokeStage = 'startup';
   let webGpuSmokeStarted = false;
   let webGpuSnapshot = null;
   let webGpuBaselineProbe = null;
+  let webGpuAcceptance = null;
+  let fsrIntegrationSummary = null;
   let initialGraphicsDiagnostics = null;
   let launchDiagnostics = null;
+  const smokeChecks = {
+    packagedAppStartup: 'NOT RUN',
+    browserShellAndControls: 'NOT RUN',
+    immersiveFullscreenEnterExit: 'NOT RUN',
+    localHttpJavascriptWebAssembly: 'NOT RUN',
+    browserTabLifecycle: 'NOT RUN',
+    httpsNavigation: 'NOT RUN',
+    pngCaptureDiagnostic: 'NOT RUN',
+    independentWebGpuCompute: 'NOT RUN',
+    bundledWebGpuFsr1: 'NOT RUN',
+  };
   const webGpuEvidence = {
     firstOutputValidation: null,
     outputValidation: null,
@@ -1436,8 +1620,11 @@ async function runSmokeTest() {
     summaryPath: '',
   };
   try {
+    smokeChecks.packagedAppStartup = 'RUNNING';
     if (!mainWindow || mainWindow.isDestroyed()) throw new Error('Main window did not start.');
-    if (process.env.TRICORE_REQUIRE_FSR_INTEGRATION_SMOKE === 'PASS') {
+    smokeChecks.packagedAppStartup = 'PASS';
+    smokeChecks.browserShellAndControls = 'RUNNING';
+    if (gpuTestPolicy !== 'off') {
       mainWindow.show();
       mainWindow.focus();
     }
@@ -1463,9 +1650,11 @@ async function runSmokeTest() {
       immersiveExit: Boolean(document.querySelector('#immersive-exit'))
     })`);
     if (Object.values(uiControls).some((value) => !value)) throw new Error(`A required browser control is missing: ${JSON.stringify(uiControls)}`);
+    smokeChecks.browserShellAndControls = 'PASS';
     writeSmokeDiagnostic(`[smoke] Browser shell, five mode controls, and immersive fullscreen controls: PASS ${JSON.stringify(uiControls)}`);
 
-    if (process.env.TRICORE_REQUIRE_FSR_INTEGRATION_SMOKE === 'PASS') {
+    if (gpuTestPolicy !== 'off') {
+      smokeChecks.immersiveFullscreenEnterExit = 'RUNNING';
       smokeStage = 'immersive-fullscreen-toggle';
       await mainWindow.webContents.executeJavaScript("document.querySelector('#immersive-toggle').click()");
       let immersiveReady = false;
@@ -1511,8 +1700,10 @@ async function runSmokeTest() {
       }
       if (!immersiveRestored) throw new Error('Exiting immersive fullscreen did not restore the original three-core browser layout.');
       writeSmokeDiagnostic('[smoke] Immersive fullscreen exit: PASS; window restored and all three cores/browser controls returned.');
+      smokeChecks.immersiveFullscreenEnterExit = 'PASS';
     }
 
+    smokeChecks.localHttpJavascriptWebAssembly = 'RUNNING';
     smokeStage = 'local-http-javascript-wasm';
     localServer = http.createServer((_request, response) => {
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
@@ -1539,30 +1730,39 @@ async function runSmokeTest() {
     if (pageResults.title !== 'Tri-Core local smoke' || pageResults.javascript !== 'javascript-ok' || pageResults.wasm !== 42) {
       throw new Error(`Local site or its WASM test failed: ${JSON.stringify(pageResults)}`);
     }
+    smokeChecks.localHttpJavascriptWebAssembly = 'PASS';
     writeSmokeDiagnostic(`[smoke] Local HTTP website, JavaScript and WebAssembly add(19,23)=42: PASS (${loadedUrl})`);
 
-    if (process.env.TRICORE_REQUIRE_FSR_INTEGRATION_SMOKE === 'PASS') {
+    if (gpuTestPolicy !== 'off') {
+      smokeChecks.independentWebGpuCompute = 'RUNNING';
       smokeStage = 'webgpu-independent-compute-known-answer';
-      webGpuBaselineProbe = await runIndependentWebGpuComputeSmoke();
+      webGpuBaselineProbe = await runIndependentWebGpuComputeSmoke(initialGraphicsDiagnostics);
+      smokeChecks.independentWebGpuCompute = webGpuBaselineProbe.status || 'FAIL';
       writeSmokeDiagnostic(`[smoke] Independent WebGPU known-answer compute probe: ${webGpuBaselineProbe.status}; state=${webGpuBaselineProbe.state}; stage=${webGpuBaselineProbe.failureStage || 'complete'}; adapterPath=${webGpuBaselineProbe.adapterRequestPath || 'none'}; requests=${JSON.stringify(webGpuBaselineProbe.adapterRequestResults || [])}; shader=${webGpuBaselineProbe.shaderCompilationStatus}; pipeline=${webGpuBaselineProbe.pipelineCreationStatus}; dispatches=${webGpuBaselineProbe.dispatches}; expected=${webGpuBaselineProbe.expectedResult}; actual=${webGpuBaselineProbe.readbackResult}; elapsedMs=${webGpuBaselineProbe.elapsedMs}; report=${webGpuBaselineProbe.reportPath || 'unavailable'}; error=${webGpuBaselineProbe.error || 'none'}`);
     }
 
+    smokeChecks.browserTabLifecycle = 'RUNNING';
     smokeStage = 'browser-tab-regression';
     const newTab = createTab(0, testUrl, { activate: true });
     if (!newTab || !(await newTab.loadPromise)) throw new Error('Creating/loading a second browser tab failed.');
     if (stateFor(0).tabs.length !== 2 || stateFor(0).id !== newTab.id) throw new Error('Tab list or active-tab state is incorrect.');
     if (!closeTab(0, newTab.id) || stateFor(0).tabs.length !== 1) throw new Error('Closing the second tab failed.');
+    smokeChecks.browserTabLifecycle = 'PASS';
     writeSmokeDiagnostic('[smoke] Add, activate and close a tab while retaining the last tab: PASS');
 
+    smokeChecks.httpsNavigation = 'RUNNING';
     try {
       const httpsUrl = await waitForNavigation(smokeTab.view.webContents, 'https://example.com/', 20_000);
       if (!httpsUrl.startsWith('https://')) throw new Error('HTTPS navigation did not remain HTTPS.');
+      smokeChecks.httpsNavigation = 'PASS';
       writeSmokeDiagnostic(`[smoke] HTTPS navigation with Chromium certificate validation: PASS (${httpsUrl})`);
     } catch (error) {
+      smokeChecks.httpsNavigation = 'BLOCKED';
       writeSmokeDiagnostic(`[smoke] HTTPS external-network probe: BLOCKED (${clampText(error?.message, 220)}); no certificate bypass was used.`);
     }
 
-    if (process.env.TRICORE_REQUIRE_FSR_INTEGRATION_SMOKE === 'PASS') {
+    if (gpuTestPolicy !== 'off') {
+      smokeChecks.pngCaptureDiagnostic = 'RUNNING';
       smokeStage = 'capturepage-fsr-diagnostic';
       const sceneTab = createTab(0, homeUrl, { activate: true, fsrTestScene: true });
       if (!sceneTab || !(await sceneTab.loadPromise)) throw new Error('The bundled WebGL2 FSR test scene could not be opened in a real WebContentsView.');
@@ -1628,8 +1828,10 @@ async function runSmokeTest() {
           nativeReport: frame.nativeReport,
         })),
       }, null, 2)}\n`, { mode: 0o600 });
+      smokeChecks.pngCaptureDiagnostic = 'PASS';
       writeSmokeDiagnostic(`[smoke] Diagnostic-only WebContentsView WebGL2 capture → capturePage PNG → AMD FSR1 D3D12 helper on WARP → PNG validation: PASS; adapter=${fsrResult.frames[0].adapter} (WARP SOFTWARE); frames=${fsrResult.frameCount}; distinct browser input frames=${fsrResult.distinctInputFrames}; distinct capture resolutions=${fsrResult.distinctInputResolutions}; latest ${fsrResult.frames[2].inputWidth}x${fsrResult.frames[2].inputHeight} -> ${fsrResult.frames[2].outputWidth}x${fsrResult.frames[2].outputHeight}; report=${fsrResult.reportPath}; summary=${summaryPath}`);
 
+      smokeChecks.bundledWebGpuFsr1 = 'RUNNING';
       smokeStage = 'webgpu-scene-load';
       webGpuSmokeStarted = true;
       const webGpuSceneTab = createTab(0, homeUrl, { activate: true, fsrWebGpuTestScene: true });
@@ -1643,7 +1845,13 @@ async function runSmokeTest() {
       const webGpuDeadline = Date.now() + 60_000;
       while (Date.now() < webGpuDeadline) {
         webGpuSnapshot = await webGpuContents.executeJavaScript('window.triCoreFsrWebGpuTest && window.triCoreFsrWebGpuTest.getSnapshot()');
-        if (webGpuSnapshot?.failed || webGpuSnapshot?.unsupported) {
+        if (webGpuSnapshot?.unsupported) {
+          smokeStage = webGpuSnapshot.failureStage || 'webgpu-adapter-discovery';
+          const unsupported = new Error(`The bundled WebGPU FSR1 scene is unsupported during ${webGpuSnapshot.failureStage || webGpuSnapshot.state}: ${webGpuSnapshot.error || JSON.stringify(webGpuSnapshot)}`);
+          unsupported.code = 'TRICORE_GPU_ADAPTER_UNSUPPORTED';
+          throw unsupported;
+        }
+        if (webGpuSnapshot?.failed) {
           throw new Error(`The bundled WebGPU FSR1 scene failed during ${webGpuSnapshot.failureStage || webGpuSnapshot.state}: ${webGpuSnapshot.error || JSON.stringify(webGpuSnapshot)}`);
         }
         if (Number(webGpuSnapshot?.framesCompleted) >= 3) break;
@@ -1809,6 +2017,7 @@ async function runSmokeTest() {
       webGpuEvidence.summaryPath = webGpuSummaryPath;
       const webGpuSummary = {
         status: completeWebGpuAcceptancePassed ? 'PASS' : 'FAIL',
+        required: gpuTestPolicy === 'required',
         independentComputeProbe: webGpuBaselineProbe || { status: 'NOT RUN', physicalGpuValidation: 'NOT RUN' },
         graphicsEnvironment: {
           launchDiagnostics,
@@ -1896,6 +2105,10 @@ async function runSmokeTest() {
         runtime: { electron: process.versions.electron, chromium: process.versions.chrome, node: process.versions.node },
       };
       fs.writeFileSync(webGpuSummaryPath, `${JSON.stringify(webGpuSummary, null, 2)}\n`, { mode: 0o600 });
+      fsrIntegrationSummary = webGpuSummary;
+      webGpuAcceptance = classifyWebGpuSmoke({ policy: gpuTestPolicy, computeProbe: webGpuBaselineProbe, fsrReport: fsrIntegrationSummary });
+      smokeChecks.bundledWebGpuFsr1 = webGpuAcceptance.status;
+      if (webGpuAcceptance.shouldFail) throw new Error(`${webGpuAcceptance.reasonCode}: ${webGpuAcceptance.reason}`);
       writeSmokeDiagnostic(`[smoke] WebGPU shader/pipeline/dispatch evidence: shaders=${webGpuSnapshot.shaderCompilationStatus}; pipelines=${webGpuSnapshot.pipelineCreationStatus}; EASU/RCAS dispatches=${webGpuSnapshot.easuDispatches}/${webGpuSnapshot.rcasDispatches}; workgroups=${webGpuSnapshot.workgroupsX}x${webGpuSnapshot.workgroupsY} at 8x8; frames=${webGpuSnapshot.framesCompleted}; timestamps supported/available/samples=${webGpuSnapshot.timestampQuerySupported}/${webGpuSnapshot.gpuTimestampsAvailable}/${webGpuSnapshot.gpuTimestampSamples}`);
       writeSmokeDiagnostic(`[smoke] WebGPU numerical output comparison: ${JSON.stringify(webGpuSummary.imageValidation)}`);
       writeSmokeDiagnostic(`[smoke] Live WebGPU game target → EASU compute → RCAS compute → visible canvas: ${webGpuSummary.status}; adapter=${JSON.stringify(webGpuSnapshot.adapter)}; API=${webGpuSnapshot.api}; softwareAdapter=${webGpuSnapshot.softwareAdapter}; input=${webGpuSnapshot.inputWidth}x${webGpuSnapshot.inputHeight}; output=${webGpuSnapshot.outputWidth}x${webGpuSnapshot.outputHeight}; visible-pixel comparison=${visibleCanvasComparison.status}; last/avg/max queue-completion wall=${webGpuSnapshot.lastQueueCompletionWallMs}/${webGpuSnapshot.averageQueueCompletionWallMs}/${webGpuSnapshot.maxQueueCompletionWallMs} ms; post-process screenshot=${visibleCapturePath}; physical GPU validation=NOT RUN; summary=${webGpuSummaryPath}`);
@@ -1906,13 +2119,110 @@ async function runSmokeTest() {
         throw new Error(`The independent WebGPU known-answer compute probe did not pass: ${JSON.stringify(webGpuBaselineProbe)}`);
       }
     } else {
-      writeSmokeDiagnostic('[smoke] Browser-frame capturePage PNG → native D3D12 FSR1 diagnostic: NOT RUN (TRICORE_REQUIRE_FSR_INTEGRATION_SMOKE=PASS was not set).');
-      writeSmokeDiagnostic('[smoke] Live WebGPU game-side FSR1 visible-frame integration: NOT RUN (TRICORE_REQUIRE_FSR_INTEGRATION_SMOKE=PASS was not set).');
+      writeSmokeDiagnostic('[smoke] Browser-frame capturePage PNG → native D3D12 FSR1 diagnostic: NOT RUN (TRICORE_GPU_TEST_MODE=off).');
+      writeSmokeDiagnostic('[smoke] Live WebGPU game-side FSR1 visible-frame integration: NOT RUN (TRICORE_GPU_TEST_MODE=off).');
     }
+    if (!webGpuBaselineProbe) webGpuBaselineProbe = createComputeNotRunReport();
+    if (!fsrIntegrationSummary) {
+      fsrIntegrationSummary = createFsrNotRunSummary(gpuTestPolicy);
+      const fsrReportWrite = writeSmokeJsonReport('fsr1-webgpu-summary.json', fsrIntegrationSummary);
+      if (fsrReportWrite.error) throw new Error(`Could not write the explicit WebGPU FSR1 NOT RUN report: ${fsrReportWrite.error}`);
+      webGpuEvidence.summaryPath = fsrReportWrite.path;
+    }
+    if (!webGpuAcceptance) {
+      webGpuAcceptance = classifyWebGpuSmoke({ policy: gpuTestPolicy, computeProbe: webGpuBaselineProbe, fsrReport: fsrIntegrationSummary });
+    }
+    smokeChecks.independentWebGpuCompute = webGpuBaselineProbe.status || 'NOT RUN';
+    smokeChecks.bundledWebGpuFsr1 = webGpuAcceptance.status;
+    if (webGpuAcceptance.shouldFail) throw new Error(`${webGpuAcceptance.reasonCode}: ${webGpuAcceptance.reason}`);
+    const computeReportWrite = writeSmokeJsonReport('webgpu-compute-smoke-summary.json', webGpuBaselineProbe);
+    if (computeReportWrite.error) throw new Error(`Could not write the independent WebGPU compute report: ${computeReportWrite.error}`);
+    const packagedSummary = {
+      schemaVersion: 1,
+      status: 'PASS',
+      gpuTestPolicy,
+      failedStage: null,
+      elapsedMs: Math.max(0, Date.now() - startedAt),
+      checks: smokeChecks,
+      webGpuAcceptance,
+      physicalGpuValidation: webGpuAcceptance.physicalGpuValidation || 'NOT RUN',
+      releaseEligible: gpuTestPolicy === 'required' && webGpuAcceptance.status === 'PASS',
+      reports: {
+        independentCompute: computeReportWrite.path,
+        bundledFsr1: webGpuEvidence.summaryPath || path.join(fsrCaptureOutputRoot(), 'fsr1-webgpu-summary.json'),
+      },
+      runtime: { electron: process.versions.electron, chromium: process.versions.chrome, node: process.versions.node },
+    };
+    const smokeReportWrite = writeSmokeJsonReport('packaged-smoke-summary.json', packagedSummary);
+    if (smokeReportWrite.error) throw new Error(`Could not write the packaged-smoke status report: ${smokeReportWrite.error}`);
+    writeSmokeDiagnostic(`[smoke] WebGPU acceptance summary: ${JSON.stringify(webGpuAcceptance)}; packaged report=${smokeReportWrite.path}`);
     smokeStage = 'complete';
     writeSmokeDiagnostic(`[smoke] Overall local runtime checks: PASS (${Date.now() - startedAt} ms)`);
     app.exit(0);
   } catch (error) {
+    for (const [name, status] of Object.entries(smokeChecks)) {
+      if (status === 'RUNNING') smokeChecks[name] = 'FAIL';
+    }
+    if (!webGpuBaselineProbe) webGpuBaselineProbe = createComputeNotRunReport();
+    if (!fsrIntegrationSummary) {
+      if (!webGpuSmokeStarted) {
+        fsrIntegrationSummary = createFsrNotRunSummary(gpuTestPolicy, `The bundled WebGPU FSR1 scene was not reached; smoke failed at ${smokeStage}.`);
+      } else {
+        fsrIntegrationSummary = createFsrFailureSummary(
+          webGpuSnapshot,
+          gpuTestPolicy,
+          error,
+          smokeStage,
+          webGpuBaselineProbe,
+          initialGraphicsDiagnostics ? {
+            launchDiagnostics,
+            chromiumGraphicsImplementation: initialGraphicsDiagnostics.graphicsApiDetails,
+            chromiumGpuDevices: initialGraphicsDiagnostics.gpuDevices,
+            nativeD3D12Adapters: initialGraphicsDiagnostics.nativeFsrAdapters,
+          } : null,
+        );
+      }
+    }
+    if (!webGpuAcceptance) {
+      webGpuAcceptance = classifyWebGpuSmoke({ policy: gpuTestPolicy, computeProbe: webGpuBaselineProbe, fsrReport: fsrIntegrationSummary });
+    }
+    smokeChecks.independentWebGpuCompute = webGpuBaselineProbe.status || 'NOT RUN';
+    smokeChecks.bundledWebGpuFsr1 = webGpuAcceptance.status;
+    const fsrReportWriteOnFailure = writeSmokeJsonReport('fsr1-webgpu-summary.json', fsrIntegrationSummary);
+    const computeReportWriteOnFailure = writeSmokeJsonReport('webgpu-compute-smoke-summary.json', webGpuBaselineProbe);
+    if (fsrReportWriteOnFailure.path) webGpuEvidence.summaryPath = fsrReportWriteOnFailure.path;
+
+    const optionalAdapterSkip = gpuTestPolicy === 'optional'
+      && error?.code === 'TRICORE_GPU_ADAPTER_UNSUPPORTED'
+      && webGpuAcceptance.status === 'SKIPPED'
+      && webGpuAcceptance.shouldFail === false;
+    if (optionalAdapterSkip && !fsrReportWriteOnFailure.error && !computeReportWriteOnFailure.error) {
+      smokeChecks.bundledWebGpuFsr1 = 'SKIPPED';
+      const packagedSummary = {
+        schemaVersion: 1,
+        status: 'PASS',
+        gpuTestPolicy,
+        failedStage: null,
+        elapsedMs: Math.max(0, Date.now() - startedAt),
+        checks: smokeChecks,
+        webGpuAcceptance,
+        physicalGpuValidation: 'NOT RUN',
+        releaseEligible: false,
+        reports: {
+          independentCompute: computeReportWriteOnFailure.path,
+          bundledFsr1: fsrReportWriteOnFailure.path,
+        },
+        runtime: { electron: process.versions.electron, chromium: process.versions.chrome, node: process.versions.node },
+      };
+      const smokeReportWriteOnSkip = writeSmokeJsonReport('packaged-smoke-summary.json', packagedSummary);
+      if (!smokeReportWriteOnSkip.error) {
+        writeSmokeDiagnostic(`[smoke] WebGPU GPU-dependent checks explicitly SKIPPED (no compatible adapter); all required GPU-independent checks completed. physicalGpuValidation=NOT RUN; releaseEligible=false; report=${smokeReportWriteOnSkip.path}`);
+        app.exit(0);
+        return;
+      }
+      error = new Error(`Could not write the packaged-smoke status report for an optional GPU skip: ${smokeReportWriteOnSkip.error}`);
+    }
+
     writeSmokeDiagnostic(`[smoke] FAIL at ${smokeStage}: ${error?.stack || error}`, 'error');
     try {
       const smokeOut = fsrCaptureOutputRoot();
@@ -1931,8 +2241,12 @@ async function runSmokeTest() {
         failedStage: smokeStage,
         elapsedMs: Math.max(0, Date.now() - startedAt),
         webGpuIntegration: {
-          status: !webGpuSmokeStarted ? 'NOT RUN' : existingWebGpuSummary?.status === 'PASS' ? 'PASS RECORDED; A LATER PACKAGED-SMOKE CHECK FAILED' : 'FAIL OR INCOMPLETE',
-          physicalGpuValidation: 'NOT RUN',
+          status: fsrIntegrationSummary?.status || 'NOT RUN',
+          capabilityStatus: fsrIntegrationSummary?.capabilityStatus || 'NOT RUN',
+          policy: gpuTestPolicy,
+          acceptance: webGpuAcceptance,
+          physicalGpuValidation: webGpuAcceptance?.physicalGpuValidation || 'NOT RUN',
+          perScenePhysicalGpuValidation: fsrIntegrationSummary?.physicalGpuValidation || 'NOT RUN',
           readbackForProcessing: false,
           independentComputeProbe: webGpuBaselineProbe || { status: 'NOT RUN', physicalGpuValidation: 'NOT RUN' },
           graphicsEnvironment: {
@@ -1966,11 +2280,36 @@ async function runSmokeTest() {
           },
           artifactInventory: collectSmokeArtifactInventory(smokeOut),
           failureSummaryPath,
+          computeReportWriteError: computeReportWriteOnFailure.error || '',
+          fsrReportWriteError: fsrReportWriteOnFailure.error || '',
         },
-        physicalGpuValidation: 'NOT RUN',
+        physicalGpuValidation: webGpuAcceptance.physicalGpuValidation || 'NOT RUN',
         runtime: { electron: process.versions.electron, chromium: process.versions.chrome, node: process.versions.node },
       };
       fs.writeFileSync(failureSummaryPath, `${JSON.stringify(failureSummary, null, 2)}\n`, { mode: 0o600 });
+      const packagedFailure = {
+        schemaVersion: 1,
+        status: 'FAIL',
+        gpuTestPolicy,
+        failedStage: smokeStage,
+        elapsedMs: Math.max(0, Date.now() - startedAt),
+        checks: smokeChecks,
+        webGpuAcceptance,
+        physicalGpuValidation: webGpuAcceptance.physicalGpuValidation || 'NOT RUN',
+        releaseEligible: false,
+        reports: {
+          independentCompute: computeReportWriteOnFailure.path,
+          bundledFsr1: fsrReportWriteOnFailure.path,
+          failure: failureSummaryPath,
+        },
+        reportWriteErrors: {
+          independentCompute: computeReportWriteOnFailure.error,
+          bundledFsr1: fsrReportWriteOnFailure.error,
+        },
+        runtime: { electron: process.versions.electron, chromium: process.versions.chrome, node: process.versions.node },
+      };
+      const packagedFailureWrite = writeSmokeJsonReport('packaged-smoke-summary.json', packagedFailure);
+      if (packagedFailureWrite.error) appendSmokeDiagnostic(`[smoke] Could not write packaged-smoke-summary.json: ${packagedFailureWrite.error}`);
       appendSmokeDiagnostic(`[smoke] Structured failure summary with partial evidence: ${failureSummaryPath}`);
     } catch (reportError) {
       appendSmokeDiagnostic(`[smoke] Could not write structured packaged-smoke failure summary: ${reportError?.message || reportError}`);

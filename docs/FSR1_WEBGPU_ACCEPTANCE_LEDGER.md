@@ -3,8 +3,8 @@
 **Recorded:** 2026-10-12 (Asia/Kolkata)
 **Repository:** `shuvrajeetkamila/Tri-Core-Browser`
 **Required branch:** `arena/66abfdc9-tri-core-browser`
-**Source identity:** `f0151657b9d40ec337de6ae1659ef3a7bcec2bd0` (`ci: upload diagnostic exe before strict smoke`), pushed to `arena/66abfdc9-tri-core-browser`.
-**Latest packaged attempt:** run [38242786245](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38242786245), source `f015165`; all four WebGPU adapter requests returned `null` before shader or output checks. The build workflow did upload the unverified EXE candidate artifact.
+**Last previously packaged source:** `f0151657b9d40ec337de6ae1659ef3a7bcec2bd0` (`ci: upload diagnostic exe before strict smoke`), pushed to `arena/66abfdc9-tri-core-browser`.
+**Latest pre-hardening packaged attempt:** run [38249515260](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38249515260), source `8f5bcd4ea899c437820e2f9efa0918b72ccac2a9`. The Windows job failed at “Run packaged-app smoke test”; prior packaging validation, automated checks, and the Linux renderer/WASM/dependency job succeeded. The current session did not retrieve the detailed adapter trace, so this run does not prove that null adapter discovery caused the failure.
 **Physical-GPU validation:** **NOT RUN**.
 
 This ledger distinguishes code/static evidence from packaged Windows runtime evidence. A passing parser, renderer build, pipeline-creation call, queue completion, WARP result, or adapter label does not by itself establish correct visible output or physical-GPU support.
@@ -13,7 +13,7 @@ This ledger distinguishes code/static evidence from packaged Windows runtime evi
 
 | ID | Acceptance criterion | Current result | Evidence / limitation |
 | --- | --- | --- | --- |
-| A-01 | Preserve browser features, sandboxing, CSP, narrow local-scene IPC, keyboard-accessible collapsible UI, preferences, WASM tests, native screenshot diagnostic, safe Chromium fallback, and automatic/manual policy. | **PASS — local regressions** | `npm test` passes 56/56, including the adapter-retry and WARP/Microsoft Basic Render Driver classification regressions, fullscreen restoration/accessibility, sender validation, restrictive local CSP, FSR policy/failure states, WASM, panel persistence/collapse, and the separate PNG diagnostic. Static tests are not a packaged runtime test. |
+| A-01 | Preserve browser features, sandboxing, CSP, narrow local-scene IPC, keyboard-accessible collapsible UI, preferences, WASM tests, native screenshot diagnostic, safe Chromium fallback, and automatic/manual policy. | **PASS — local regressions** | The expanded `npm test` suite passes 85/85, including adapter retries and software classification, fullscreen restoration/accessibility, sender validation, restrictive local CSP, FSR policy/failure states, WASM, panel persistence/collapse, packaged-evidence policy, and deterministic PNG/path-confinement/report-validator fixtures. These are not packaged runtime or GPU evidence. |
 | A-02 | Keep detection, adapter/device initialization, shader/pipeline/resource failure, processing, output submission, visible verification, unsupported, and device-loss states distinct. | **PARTIAL — adapter discovery exercised** | Source/UI and static lifecycle assertions distinguish these states and preserve failure stages. Runs 38228901586 and 38242786245 recorded `null` for all four requests (high-performance, low-power, default, and explicit fallback); later WebGPU states were not reached. |
 | A-03 | Compile EASU and RCAS WGSL and successfully create both **compute** pipelines plus the presentation pipeline. | **NOT RUN — adapter unavailable** | Runs 38227656945, 38228901586, and 38242786245 all stopped before shader compilation because WebGPU adapter discovery returned `null`. The parser-only `wgsl_reflect@1.6.0` result is not Dawn/Tint semantic validation or WebGPU pipeline creation. |
 | A-04 | Dispatch EASU and RCAS repeatedly on the controlled scene's own lower-resolution GPU target. | **NOT RUN — adapter unavailable** | Runs 38227656945, 38228901586, and 38242786245 returned no WebGPU adapter; neither compute pass ran. The strict smoke gate still requires at least three dispatches per pipeline and is not weakened. |
@@ -32,7 +32,7 @@ This ledger distinguishes code/static evidence from packaged Windows runtime evi
 | Gate | Result | Limit |
 | --- | --- | --- |
 | `npm ci` | **PASS** | Clean lockfile install; npm reports eight unresolved moderate dependency findings. |
-| `npm test` | **PASS — 56/56** | Includes safe WebGPU adapter retries, software-adapter classification, WebGPU validation-helper, stage-specific fallback, fullscreen UI/accessibility/IPC/security/layout assertions, and Windows workflow assertions; no Electron/GPU runtime. |
+| `npm test` | **PASS — 85/85** | Includes safe WebGPU adapter retries, software-adapter classification, WebGPU validation-helper, stage-specific fallback, fullscreen UI/accessibility/IPC/security/layout assertions, Windows workflow assertions, deterministic policy status tests, synthetic PNG/path-confinement/report-validator tests; no Electron/GPU runtime. |
 | `npm run build` | **PASS** | Vite renderer only; not Electron packaging or GPU validation. |
 | JavaScript/CommonJS syntax checks | **PASS** | `node --check` passed for source, test, and script JavaScript/CommonJS files; does not compile WGSL in Dawn/Tint. |
 | Workflow/package metadata parse | **PASS** | `js-yaml` parsed the build, native FSR diagnostic, and release workflows; `package.json` parsed as JSON. |
@@ -40,11 +40,11 @@ This ledger distinguishes code/static evidence from packaged Windows runtime evi
 | WGSL parser check | **PASS — parser-only** | Five modules accepted by `wgsl_reflect@1.6.0`; not WebGPU semantic validation or pipeline creation. |
 | `npm audit --audit-level=high` | **PASS — threshold only** | Eight moderate advisories remain; see A-11. |
 | Windows PowerShell assertions/package script | **NOT RUN locally** | Linux host; CI is the authoritative Windows execution. |
-| Current-source Windows packaged smoke | **FAIL — WebGPU adapter discovery** | Run 38242786245 built source `f015165`; all four standard/fallback requests returned `null`. Packaging and non-WebGPU tests passed, and the explicitly unverified EXE candidate uploaded; the strict WebGPU gate remains failed. |
+| Previously packaged Windows smoke (source `f015165`) | **FAIL — WebGPU adapter discovery** | Run 38242786245: all four standard/fallback requests returned `null`. Packaging and non-WebGPU tests passed, and the explicitly unverified EXE candidate uploaded; the strict WebGPU gate remained failed. |
 
-## Current-source CI and release record
+## Packaged CI and release record at the previously tested source
 
-- Latest packaged smoke: [run 38242786245](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38242786245), source `f0151657b9d40ec337de6ae1659ef3a7bcec2bd0`. Windows packaging, executable validation, candidate upload, fullscreen, browser/WASM/HTTPS, and the separate WARP screenshot diagnostic passed. All four WebGPU adapter requests returned `null`; the strict live-WebGPU gate failed. Check annotation `114789255916` contains full diagnostics.
+- Packaged smoke at source `f0151657b9d40ec337de6ae1659ef3a7bcec2bd0`: [run 38242786245](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38242786245). Windows packaging, executable validation, candidate upload, fullscreen, browser/WASM/HTTPS, and the separate WARP screenshot diagnostic passed. All four WebGPU adapter requests returned `null`; the strict live-WebGPU gate failed. Check annotation `114789255916` contains full diagnostics.
 - **EXE artifact delivered:** `TriCoreBrowser-Windows-x64-unverified-smoke-candidate` ([Actions run](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38242786245), artifact ID `11743262998`, 109,708,463-byte ZIP, 30-day retention). It contains only the packaged executable and is explicitly unverified; it is not the acceptance-certified portable ZIP or a release.
 - Native D3D12 FSR1 WARP harness: [run 38228901578](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38228901578) passed, including revised Basic Render Driver classification; software-only and separate from WebGPU.
 - Chromium reported Microsoft Basic Render Driver / ANGLE D3D11 WARP; the native probe found WARP available and zero non-software D3D12 adapters. Chromium's [software-WebGPU adapter issue 40277080](https://issues.chromium.org/issues/40277080) documents that CPU adapters may remain unavailable (`requestAdapter()` can return `null`) and that unsafe-WebGPU/blocklist overrides are separate developer-only escape hatches. None was applied here.
@@ -52,4 +52,12 @@ This ledger distinguishes code/static evidence from packaged Windows runtime evi
 - Public Windows release/prerelease: **NOT PUBLISHED**.
 - Physical-GPU acceptance: **NOT RUN**.
 
-Next route: run this unverified EXE candidate with the unchanged smoke commands on Windows with a Chromium-supported WebGPU adapter and its normal vendor driver. Do not bypass Chromium's software-adapter blocklist or relax the gate. The full tested package and release remain gated on all live WebGPU checks passing. Do not promote WARP to physical-GPU evidence.
+The older unverified EXE candidate is tied to source `f015165` and is not a build of the current CI-hardening changes. Next, run the updated Level A workflow and review its retained report; then opt into Level B only on a configured, supported Windows GPU runner. Do not bypass Chromium's software-adapter blocklist or relax the gate. The full tested package and release remain gated on all live WebGPU checks passing. Do not promote WARP to physical-GPU evidence.
+
+## CI-policy hardening update after run 38249515260
+
+The current implementation changes in this worktree are based on `8f5bcd4ea899c437820e2f9efa0918b72ccac2a9`. They separate GPU-independent hosted Windows checks from optional GPU checks, add an opt-in required physical-GPU job using the `self-hosted, windows, x64, gpu` labels, and make the shared evidence validator fail closed on bad runtime states, untrusted evidence paths, or malformed PNG structure. Synthetic tests exercise these status transitions and evidence rules; they are mocks, not GPU evidence.
+
+Current local checks: `npm test` **85/85 PASS**; `npm run build` **PASS**; JavaScript syntax checks **PASS**; build/release workflow YAML parse **PASS**; `git diff --check` **PASS**; `npm audit --audit-level=high` **PASS** with 8 moderate findings and no high/critical finding. Detailed scope and limitations are in `docs/WEBGPU_CI_VALIDATION_REPORT.md`.
+
+The updated Windows workflow has not run; no current-source Windows package or packaged FSR1 frame/output was tested. Physical-GPU identity/driver/compute/FSR validation remains **NOT RUN**. No commit or push has yet been made for these worktree changes.

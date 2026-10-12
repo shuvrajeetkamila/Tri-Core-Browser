@@ -50,12 +50,24 @@
   function adapterInfo(adapter) {
     const info = adapter?.info || {};
     const clean = (value) => String(value || '').replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, 160);
-    return {
+    const fallback = typeof adapter?.isFallbackAdapter === 'boolean'
+      ? adapter.isFallbackAdapter
+      : typeof info.isFallbackAdapter === 'boolean' ? info.isFallbackAdapter : null;
+    const details = {
       vendor: clean(info.vendor),
       architecture: clean(info.architecture),
       device: clean(info.device),
       description: clean(info.description),
-      exposed: Boolean(info.vendor || info.architecture || info.device || info.description),
+      isFallbackAdapter: fallback,
+    };
+    const identity = `${details.vendor} ${details.architecture} ${details.device} ${details.description}`;
+    const softwareAdapter = fallback === true || /\bwarp\b|swiftshader|software raster|basic render|llvmpipe/i.test(identity)
+      ? true
+      : fallback === false || /nvidia|geforce|quadro|amd|radeon|intel|arc/i.test(identity) ? false : null;
+    return {
+      ...details,
+      exposed: Boolean(details.vendor || details.architecture || details.device || details.description || fallback !== null),
+      softwareAdapter,
     };
   }
 
