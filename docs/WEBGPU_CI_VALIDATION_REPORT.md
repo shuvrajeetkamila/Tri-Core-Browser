@@ -4,15 +4,17 @@
 
 The packaged Windows smoke path now separates ordinary packaged-app verification from WebGPU/FSR1 GPU evidence. A hosted Windows runner uses an **optional** GPU policy: safe no-adapter detection is reported as `SKIPPED`, never as a GPU `PASS`, and a successful hosted smoke is explicitly **not release-eligible**. A separate opt-in Level B job and the prerelease build require a configured self-hosted Windows runner labelled `self-hosted`, `windows`, `x64`, and `gpu`. Level B fails unless compute, bundled FSR1 output, physical-adapter identity, an active Chromium GPU device, and a non-empty driver version are all verified.
 
-This repository/session has **not run either Windows workflow after these changes**. The GitHub runner inventory could not be read in this session (the Actions runner API returned HTTP 403), so the presence and configuration of the required self-hosted GPU runner remain unverified. No physical GPU, driver, EASU/RCAS dispatch, packaged FSR1 output, or release result is claimed as tested by this report.
+The hardened source was pushed as commit `499e44e8fefc8650ca6b438299d16d4092c52e76`. Post-change workflow run [38265255323](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38265255323) passed both Linux checks and the hosted Windows Level A build/package smoke; the packaged-smoke validator and diagnostics upload succeeded, while portable distribution assembly was skipped. Its diagnostic executable is explicitly unverified. The separate Level B job was skipped because this was a push, not an opt-in `workflow_dispatch`. The exact optional WebGPU compute/FSR status was not retrieved: this sandbox could not fetch GitHub Actions log/artifact content from its result-storage host. Thus this run is not cited as proof of a WebGPU compute PASS or live FSR PASS. A separate post-change D3D12/WARP harness run [38265255364](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38265255364) passed; it is software-only. No physical GPU, physical driver, Level B, or release result is claimed. The Actions runner inventory could not be read (runner API returned HTTP 403), so the required self-hosted GPU runner's presence/configuration remains unverified.
 
 ## Investigation of the observed failure
 
-The latest available GitHub run was `38249515260` at source commit `8f5bcd4ea899c437820e2f9efa0918b72ccac2a9`. Its Windows job failed at **“Run packaged-app smoke test.”** The preceding executable build, package validation, automated tests, and audit succeeded; the separate Linux renderer/WASM/dependency job succeeded. Distribution assembly and upload were skipped.
+The latest pre-hardening run was `38249515260` at source commit `8f5bcd4ea899c437820e2f9efa0918b72ccac2a9`. Its Windows job failed at **“Run packaged-app smoke test.”** The preceding executable build, package validation, automated tests, and audit succeeded; the separate Linux renderer/WASM/dependency job succeeded. Distribution assembly and upload were skipped.
 
-The packaged smoke source has a distinct WebGPU adapter-discovery result: the independent probe can report `UNSUPPORTED` when the API exists but every safe adapter request returns `null`. The bundled FSR1 scene can also report unsupported before shader compilation or frame processing. The former smoke gate treated unsupported as fatal without separating that capability state from a device/shader/runtime/output failure. GitHub's Actions log details were not retrieved in this session, so the available run metadata does **not** establish that the observed failure was specifically caused by null adapter requests; that remains a source-supported hypothesis, not a verified runner trace.
+The full failure annotation (check `114789255916`) confirms the cause. The hosted Windows runner reported Microsoft Basic Render Driver / ANGLE D3D11 WARP; its D3D12 diagnostics showed WARP available and no non-software adapters. The packaged browser, fullscreen, local HTTP/JavaScript/WASM, tab, HTTPS, and separate screenshot→PNG→D3D12-WARP diagnostic all passed. The bundled WebGPU FSR1 scene then tried high-performance, low-power, default, and explicit fallback adapter requests; all four returned unavailable. Smoke failed at `webgpu-pipeline-dispatch-validation` before EASU/RCAS shader compilation, pipeline creation, dispatch, or FSR output. The failing gate treated the no-adapter `UNSUPPORTED` state as fatal under its strict policy. This confirms an adapter-availability failure, not a shader/dispatch/output defect. The D3D12 WARP screenshot diagnostic is a separate software path and does not establish WebGPU or physical-GPU support.
 
-The implementation now validates the adapter-request evidence before allowing an optional skip. An API error, a rejected device request, a shader/pipeline/resource failure, an incomplete dispatch, or missing/invalid output evidence remains a failure.
+The implementation now validates adapter-request evidence before allowing an optional Level A skip. API/device request errors, a rejected adapter request, selected-adapter initialization/runtime failures, shader/pipeline/resource failures, incomplete dispatch, and missing/invalid output evidence remain failures.
+
+The post-change Level A run `38265255323` passed the packaged Windows smoke and the shared validator. The exact WebGPU outcome (`PASS` versus a valid optional `SKIPPED`) could not be read from the Actions artifact/log in this sandbox; do not infer either. Level B did not run.
 
 ## Status model
 
@@ -38,6 +40,8 @@ A skip does not make the GPU acceptance status pass. The enclosing Level A packa
 - HTTPS navigation using Chromium certificate validation; external-network failure is recorded as `BLOCKED`, without certificate bypass.
 - The existing WebGL2 `WebContentsView` → `capturePage()` PNG → native D3D12 FSR1 helper on **WARP software**, with three changing frames, three capture resolutions, per-frame reports, processed/reference PNGs, and image/report checks.
 - Report generation, smoke logs, executable candidate upload, and always-run diagnostic artifact upload.
+
+Post-change run `38265255323` built/size-validated the Windows executable, passed the packaged smoke/validator, and uploaded the diagnostics; it skipped distribution assembly and the portable package. The exact optional WebGPU status in that run could not be retrieved from the job artifact/log.
 
 WebGPU compute/FSR checks may run on a hosted adapter. If all safe adapter requests return unavailable, the reports say `UNSUPPORTED`/`SKIPPED`, record zero dispatches/frames and `NOT RUN` output checks, and the ordinary Level A smoke remains successful only if the independent checks above passed. A WebGPU runtime pass on a software/hosted adapter still leaves physical validation `NOT RUN`. The distribution assembly and portable-package upload steps are gated off on Level A (`TRICORE_FSR_INTEGRATION_SMOKE=SKIPPED`). The diagnostic executable is uploaded under an explicitly unverified name before the runtime gate; that candidate is not a release package.
 
@@ -93,18 +97,18 @@ The shared `scripts/validate-packaged-smoke.cjs` checks the emitted JSON reports
 
 | Check | Current result |
 |---|---|
-| Source investigation | Windows packaged-smoke step failure confirmed from run metadata; exact adapter trace not retrieved |
-| Level A/Level B workflow implementation | Added in this change; not yet run on GitHub |
+| Source investigation | Confirmed in annotation 114789255916: all four WebGPU adapter requests unavailable on a WARP-only hosted runner; failure occurred before shader/dispatch/output |
+| Level A/Level B workflow implementation | Level A passed in run 38265255323; Level B was skipped because this was a push, not an opt-in dispatch |
 | Self-hosted GPU runner availability | Unknown; Actions runner inventory request returned 403 |
 | `npm ci` | PASS (locked dependencies installed; 8 moderate audit findings reported) |
 | `npm test` | PASS — 85 tests, 0 failures (including deterministic policy, path-confinement, and synthetic report-validator tests; mocks only) |
 | `npm run build` | PASS — Vite production renderer build |
 | `npm audit --audit-level=high` | PASS — 8 moderate findings, 0 high/critical findings |
-| Packaged Windows executable after changes | Not built in this Linux session |
-| Packaged WebGPU compute after changes | Not executed in this session |
-| Live bundled WebGPU FSR1 EASU/RCAS output after changes | Not executed in this session |
-| Physical GPU / driver / output validation | Not executed in this session; no PASS claimed |
-| WARP PNG processing after changes | Not executed in this session; WARP remains software-only |
+| Packaged Windows executable after changes | Built and size-validated in run 38265255323; uploaded only as an explicitly unverified diagnostic candidate artifact (109,719,020-byte archive) |
+| Packaged WebGPU compute after changes | Attempted under optional policy; Level A validator passed, but the exact report status/result was not retrievable from Actions artifacts/logs |
+| Live bundled WebGPU FSR1 EASU/RCAS output after changes | Attempted under optional policy; exact `PASS` versus safe `SKIPPED` state and frame/output details not retrievable; no live FSR PASS claimed |
+| Physical GPU / driver / output validation | NOT RUN; Level B was skipped on push; no physical-GPU PASS claimed |
+| WARP PNG processing after changes | Level A packaged validator passed the screenshot→PNG→WARP evidence gate; separate native WARP harness run 38265255364 also passed; both are software-only |
 | Ordinary external websites / games / cloud video | No FSR page interception or arbitrary game support claimed |
 | DLSS | Not implemented; no fallback/substitution claim |
 
