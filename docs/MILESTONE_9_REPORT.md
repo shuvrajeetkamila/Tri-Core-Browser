@@ -37,4 +37,8 @@ The earlier handoff's `126/126` total and Images-source test results belong to s
 
 ## Windows Actions status
 
-A push of this session-branch commit is intended to start the hosted `windows-latest` Level A build and packaged-smoke workflow. Its result must be recorded from the run for the exact pushed commit. Level A can produce a portable EXE candidate, but it does not run the opt-in self-hosted physical-GPU job. A green Level A run does not establish physical-GPU support, live FSR processing, release eligibility, or arbitrary-page upscaling.
+The first session-branch run, [38426660450](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38426660450) at `d977ea6`, passed Linux checks, built and size-validated the Windows EXE, uploaded its diagnostic candidate, and launched the packaged smoke process successfully. The Level A evidence validator then failed because this new validator change incorrectly required an overall-runtime `PASS` marker even when the runner correctly reported no compatible WebGPU adapter and a safe `SKIPPED` GPU result.
+
+The uploaded smoke diagnostics showed Microsoft Basic Render Driver, no WebGPU adapters, GPU-dependent FSR safely skipped, and the separate D3D12 WARP screenshot diagnostic passing. Physical-GPU validation remained **NOT RUN**. This was a validator regression, not a Windows packaging or launch failure, but the candidate from that failed run is not the accepted final artifact.
+
+The validator fix now accepts either a final runtime PASS or the explicit safe no-adapter skip (while still requiring a non-empty app log, all GPU-independent checks, and no failure marker). The corrective commit is being retested on hosted Windows before treating its EXE artifact as accepted. Level A does not run the opt-in self-hosted physical-GPU job; even a green rerun will not establish physical-GPU support, live FSR processing, release eligibility, or arbitrary-page upscaling.

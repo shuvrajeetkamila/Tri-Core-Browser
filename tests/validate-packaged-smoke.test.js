@@ -261,9 +261,13 @@ function writeCoreReports(root, { policy, compute, fsr, acceptance }) {
     '[smoke] Immersive fullscreen exit: PASS',
     '[smoke] Diagnostic-only WebContentsView WebGL2 capture: PASS',
   ];
-  if (acceptance.status === 'PASS') logLines.push('[smoke] Live WebGPU game target: PASS');
-  if (acceptance.status === 'SKIPPED') logLines.push('[smoke] WebGPU GPU-dependent checks explicitly SKIPPED (no compatible adapter).');
-  logLines.push('[smoke] Overall local runtime checks: PASS (synthetic fixture)');
+  if (acceptance.status === 'PASS') {
+    logLines.push('[smoke] Live WebGPU game target: PASS');
+    logLines.push('[smoke] Overall local runtime checks: PASS (synthetic fixture)');
+  }
+  if (acceptance.status === 'SKIPPED') {
+    logLines.push('[smoke] WebGPU GPU-dependent checks explicitly SKIPPED (no compatible adapter); all required GPU-independent checks completed. physicalGpuValidation=NOT RUN; releaseEligible=false.');
+  }
   const logPath = path.join(root, 'smoke.log');
   fs.writeFileSync(logPath, `${logLines.join('\n')}\n`);
   return logPath;
