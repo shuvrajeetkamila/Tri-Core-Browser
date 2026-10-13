@@ -312,14 +312,17 @@ function validateNoAdapterSkip(computeReport, fsrReport, acceptance) {
 }
 
 function validateSmokeLog(filePath, acceptanceStatus) {
-  if (!filePath) return;
+  assert(typeof filePath === 'string' && filePath.trim().length > 0, 'Packaged smoke log path is required; pass --smoke-log <path>.');
   assert(fs.existsSync(filePath), `Packaged smoke log is missing: ${filePath}`);
   const log = fs.readFileSync(filePath, 'utf8');
+  assert(log.trim().length > 0, `Packaged smoke log is empty: ${filePath}`);
   assert(log.includes('[smoke] Browser shell, five mode controls'), 'Packaged browser shell/UI check is not in the app log.');
   assert(log.includes('[smoke] Local HTTP website, JavaScript and WebAssembly add(19,23)=42: PASS'), 'Packaged local HTTP/JavaScript/WebAssembly regression check is not in the app log.');
   assert(log.includes('[smoke] Add, activate and close a tab while retaining the last tab: PASS'), 'Packaged browser-tab lifecycle check is not in the app log.');
   assert(log.includes('[smoke] Active-core immersive fullscreen: PASS') && log.includes('[smoke] Immersive fullscreen exit: PASS'), 'Packaged immersive fullscreen enter/exit checks are missing.');
   assert(log.includes('[smoke] Diagnostic-only WebContentsView WebGL2 capture'), 'Packaged capturePage PNG diagnostic is missing from the app log.');
+  assert(log.includes('[smoke] Overall local runtime checks: PASS'), 'The app log is missing the final packaged runtime PASS marker.');
+  assert(!log.includes('[smoke] FAIL at '), 'The app log contains a packaged smoke failure marker.');
   if (acceptanceStatus === 'PASS') assert(log.includes('[smoke] Live WebGPU game target'), 'A claimed live WebGPU FSR1 PASS has no corresponding app-log evidence.');
   if (acceptanceStatus === 'SKIPPED') assert(log.includes('GPU-dependent checks explicitly SKIPPED'), 'A GPU skip is not explicitly recorded in the app log.');
 }

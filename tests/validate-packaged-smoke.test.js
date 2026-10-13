@@ -263,6 +263,7 @@ function writeCoreReports(root, { policy, compute, fsr, acceptance }) {
   ];
   if (acceptance.status === 'PASS') logLines.push('[smoke] Live WebGPU game target: PASS');
   if (acceptance.status === 'SKIPPED') logLines.push('[smoke] WebGPU GPU-dependent checks explicitly SKIPPED (no compatible adapter).');
+  logLines.push('[smoke] Overall local runtime checks: PASS (synthetic fixture)');
   const logPath = path.join(root, 'smoke.log');
   fs.writeFileSync(logPath, `${logLines.join('\n')}\n`);
   return logPath;
@@ -276,8 +277,10 @@ function validateFixture(policy, fixture) {
     if (typeof fixture.mutate === 'function') fixture.mutate({ root, compute, fsr });
     const acceptance = classifyWebGpuSmoke({ policy, computeProbe: compute, fsrReport: fsr });
     const smokeLog = writeCoreReports(root, { policy, compute, fsr, acceptance });
-    if (typeof fixture.mutateReports === 'function') fixture.mutateReports({ root });
-    return spawnSync(process.execPath, [validatorPath, '--policy', policy, '--directory', root, '--smoke-log', smokeLog], { encoding: 'utf8' });
+    if (typeof fixture.mutateReports === 'function') fixture.mutateReports({ root, smokeLog });
+    const args = [validatorPath, '--policy', policy, '--directory', root];
+    if (!fixture.omitSmokeLog) args.push('--smoke-log', smokeLog);
+    return spawnSync(process.execPath, args, { encoding: 'utf8' });
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -288,6 +291,20 @@ test('packaged evidence validator accepts deterministic optional no-adapter repo
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /"gpuRuntimeStatus":"SKIPPED"/);
   assert.match(result.stdout, /"physicalGpuValidation":"NOT RUN"/);
+});
+
+test('packaged evidence validator rejects an omitted or empty application smoke log', () => {
+  const omitted = validateFixture('optional', { omitSmokeLog: true });
+  assert.notEqual(omitted.status, 0);
+  assert.match(omitted.stderr, /Packaged smoke log path is required/);
+
+  const empty = validateFixture('optional', {
+    mutateReports({ smokeLog }) {
+      fs.writeFileSync(smokeLog, '');
+    },
+  });
+  assert.notEqual(empty.status, 0);
+  assert.match(empty.stderr, /Packaged smoke log is empty/);
 });
 
 test('packaged evidence validator rejects stage or screenshot paths outside its smoke-output directory', () => {
