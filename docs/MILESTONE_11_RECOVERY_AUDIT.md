@@ -66,7 +66,7 @@ The checked-in `.github/workflows/release.yml` is named **“Build and publish W
 
 ## M8/M9 recovery search
 
-- Local reflogs show the initial clone at `e27cb207`, followed in this M11 session by the forward alignment to `ba16afd`; no earlier M8/M9 source commit appeared.
+- Local reflogs show the initial clone at `e27cb207`, followed in this M11 session by the forward alignment to `ba16afd`; no original M8/M9 source commit surfaced.
 - `git fsck --full --no-reflogs --unreachable` returned no unreachable objects.
 - A bounded search of `/home/user` found no M8/M9 archive, patch, snapshot, ZIP, EXE, or recovery bundle. No local binary/archive was found.
 - The current and available source trees were checked. The exact `3b05d2f..ba16afd` delta is three paths: added `docs/MILESTONE_9_REPORT.md`; modified `scripts/validate-packaged-smoke.cjs`; modified `tests/validate-packaged-smoke.test.js`. The other 75 tracked paths match. This is not evidence of fidelity to an unavailable original tree.
