@@ -1,0 +1,307 @@
+{
+  "schemaVersion": 1,
+  "milestone": "M16",
+  "assessmentDate": "2026-10-14",
+  "branch": "arena/18bfbe1a-tri-core-browser",
+  "testedCodeCommit": "e09408d582a5328727f32bac53736626473b0d5e",
+  "overallStatus": "BLOCKED",
+  "releaseEligible": false,
+  "sourceAndBranch": {
+    "preEditBaseline": {
+      "path": "/home/user/m16-audit/2026-10-14_180252_UTC_baseline.tsv",
+      "sha256": "8fc77f27e6d6550e0c09b8b6cbbb11cf98915838be057df1931a548a783f6068",
+      "entries": 90,
+      "unchangedAtAlignment": true
+    },
+    "remoteTreeComparison": {
+      "remoteHead": "e09408d582a5328727f32bac53736626473b0d5e",
+      "remoteBlobs": 90,
+      "localFilesCompared": 90,
+      "missing": 0,
+      "blobOrModeMismatches": 0,
+      "localOnlyNonIgnoredFiles": 0,
+      "comparisonPath": "/home/user/m16-audit/2026-10-14_180252_UTC_remote-e094-tree-comparison.tsv",
+      "comparisonSha256": "645bd3570bde75e577c296bd4b15b494ad32e9f1e3c4e5fb577253ebc7c432e2"
+    },
+    "history": {
+      "initialHead": "e27cb207d6be86a346420901a979b831cf849c00",
+      "finalAlignedHead": "e09408d582a5328727f32bac53736626473b0d5e",
+      "initialHeadIsAncestor": true,
+      "aheadBehindBeforeAlignment": "0 48",
+      "shallowAfterFetch": false,
+      "worktreeFilesOverwritten": false,
+      "forceOperations": false
+    }
+  },
+  "localChecks": {
+    "runtime": {
+      "node": "v22.22.3",
+      "npm": "10.9.8",
+      "windowsPowerShellAvailable": false,
+      "cmakeAvailable": false,
+      "wineAvailable": false,
+      "electronRuntimePayloadInstalled": false
+    },
+    "lockedInstall": {
+      "status": "PASS",
+      "command": "npm ci --ignore-scripts --no-audit --no-fund",
+      "exitCode": 0,
+      "packagesAdded": 298,
+      "lifecycleScripts": "ignored",
+      "packageLockSha256BeforeAndAfter": "24708fc5609edbc5eaf4d6ad7f4042dad9f25d3e961de24e44d2ce7c12f522c6",
+      "log": "/home/user/m16-audit/2026-10-14_180744_UTC_M16/logs/npm-ci-ignore-scripts.log"
+    },
+    "unitTests": {
+      "status": "PASS",
+      "command": "npm test",
+      "exitCode": 0,
+      "passed": 100,
+      "failed": 0,
+      "skipped": 0,
+      "log": "/home/user/m16-audit/2026-10-14_180744_UTC_M16/logs/npm-test-review-final.log",
+      "logSha256": "f9bb23d15a2261c534cf26f8837441b3703c83a3c192401e1f0e059f5d6551ec",
+      "alsoPassedAfterInstallLog": "/home/user/m16-audit/2026-10-14_180744_UTC_M16/logs/npm-test-postinstall.log"
+    },
+    "rendererBuild": {
+      "status": "PASS",
+      "command": "npm run build -- --outDir /home/user/m16-audit/2026-10-14_180744_UTC_M16/renderer-build-e094",
+      "exitCode": 0,
+      "vite": "8.3.4",
+      "modulesTransformed": 11,
+      "outputFiles": 11,
+      "outputBytes": 275509,
+      "outputLocation": "/home/user/m16-audit/2026-10-14_180744_UTC_M16/renderer-build-e094",
+      "log": "/home/user/m16-audit/2026-10-14_180744_UTC_M16/logs/npm-run-build.log",
+      "logSha256": "8cdec26a4bf35a6827d7dcf4140c7e755360a1ca642ec8e88916914f18a35145"
+    },
+    "javascriptSyntax": {
+      "status": "PASS",
+      "command": "node --check on 31 .js/.cjs/.mjs files under app/electron/src/tests/scripts",
+      "exitCode": 0,
+      "checkedFiles": 31,
+      "failures": 0
+    },
+    "workflowAndPackageParsing": {
+      "status": "PASS",
+      "files": [
+        ".github/workflows/build.yml",
+        ".github/workflows/release.yml",
+        ".github/workflows/fsr1-native-poc.yml",
+        "package.json",
+        "package-lock.json"
+      ],
+      "parser": "js-yaml and JSON.parse",
+      "exitCode": 0,
+      "log": "/home/user/m16-audit/2026-10-14_180744_UTC_M16/logs/syntax-config-checks.log",
+      "logSha256": "e9510add5a06ea95903f6815972fc2b75de170cd2092f9a5923b75350b280592"
+    },
+    "documentationValidation": {
+      "status": "PASS",
+      "command": "JSON.parse acceptance file and resolve relative Markdown links in report/guide",
+      "exitCode": 0,
+      "markdownFilesChecked": 2,
+      "internalLinkErrors": 0,
+      "log": "/home/user/m16-audit/2026-10-14_180744_UTC_M16/logs/docs-validation-final-post-release.log",
+      "logSha256": "1dbe531bd216c4159fa5ce13ba94d41d59ed02ae83ee0735834e45a98ba2207c"
+    },
+    "dependencyTree": {
+      "status": "PASS",
+      "command": "npm ls --all --json",
+      "exitCode": 0,
+      "problems": [],
+      "outputSha256": "8c595de8e67de42ebfb0b4a2c0bd99aba6831fdc430e92becfae29675e12d8d4"
+    },
+    "windowsPackageBuildLocal": {
+      "status": "NOT RUN",
+      "reason": "The local environment has no PowerShell, CMake, Wine, or installed Electron runtime payload. No local Windows package/artifact was built or executed; the separate hosted CI packaged smoke is recorded under windowsActions."
+    }
+  },
+  "windowsActions": {
+    "levelARun": {
+      "runId": 38599630672,
+      "event": "push",
+      "headSha": "e09408d582a5328727f32bac53736626473b0d5e",
+      "runConclusion": "success",
+      "windowsJob": "Build and smoke-test Windows x64 portable app",
+      "steps": {
+        "lockedInstall": "success",
+        "automatedTests": "success",
+        "highCriticalAuditThreshold": "success",
+        "windowsPortableExecutableBuild": "success",
+        "executableValidation": "success",
+        "unverifiedCandidateUpload": "success",
+        "packagedSmokeProcess": "success",
+        "levelAEvidenceValidator": "success",
+        "diagnosticsUpload": "success",
+        "portableDistributionAssembly": "skipped",
+        "portableDistributionUpload": "skipped",
+        "summaryWriter": "success"
+      },
+      "linuxJob": "success",
+      "physicalGpuJob": "skipped"
+    },
+    "nativeD3D12WarpRun": {
+      "runId": 38599630609,
+      "headSha": "e09408d582a5328727f32bac53736626473b0d5e",
+      "runConclusion": "success",
+      "steps": {
+        "nativeConfigure": "success",
+        "nativeBuild": "success",
+        "officialEasuAndRcasOnD3D12Warp": "success",
+        "evidenceUpload": "success"
+      },
+      "classification": "software-only; not physical-GPU evidence"
+    },
+    "pullRequestRun": {
+      "runId": 38599644501,
+      "headSha": "e09408d582a5328727f32bac53736626473b0d5e",
+      "runConclusion": "success",
+      "linuxJob": "success",
+      "windowsPortableJob": "skipped by pull_request condition",
+      "physicalGpuJob": "skipped"
+    },
+    "pullRequestWarpRun": {
+      "runId": 38599644207,
+      "headSha": "e09408d582a5328727f32bac53736626473b0d5e",
+      "runConclusion": "success",
+      "classification": "software-only; not physical-GPU evidence"
+    },
+    "releaseWorkflow": {
+      "configuredPushBranches": ["arena/66abfdc9-tri-core-browser"],
+      "currentFixedBranchPushIncluded": false,
+      "workflowDispatchAvailable": true,
+      "manualDispatchPerformed": false,
+      "workflowChanged": false
+    }
+  },
+  "artifacts": [
+    {
+      "name": "TriCoreBrowser-Windows-x64-unverified-smoke-candidate",
+      "artifactId": 11910954706,
+      "runId": 38599630672,
+      "githubReportedSizeBytes": 109720667,
+      "githubReportedSha256": "ca0b2b8b0996eecde499a556532cc9a287b6163a75ca23ffbce7978a031e5aaf",
+      "expiresAt": "2026-11-13T16:41:02Z",
+      "integrityStatus": "NOT_VERIFIED_LOCALLY",
+      "localArchiveBytes": 0,
+      "localArchiveSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "executed": false,
+      "recoveryAttempts": [
+        {
+          "route": "GitHub CLI Actions artifact ZIP API",
+          "command": "gh api repos/shuvrajeetkamila/Tri-Core-Browser/actions/artifacts/11910954706/zip",
+          "exitCode": 1,
+          "result": "EOF; zero bytes"
+        },
+        {
+          "route": "GitHub CLI run download by run and artifact name",
+          "command": "gh run download 38599630672 --name TriCoreBrowser-Windows-x64-unverified-smoke-candidate --dir <external-directory>",
+          "exitCode": 1,
+          "result": "EOF; no files recovered"
+        }
+      ]
+    },
+    {
+      "name": "TriCoreBrowser-Packaged-Smoke-Diagnostics",
+      "artifactId": 11911314745,
+      "runId": 38599630672,
+      "githubReportedSizeBytes": 734795,
+      "githubReportedSha256": "eec0c9cc3c633356bfef417ceb0d6baeb95d25cdc3b50f4072b91ef184f2ef8a",
+      "expiresAt": "2026-11-13T16:41:28Z",
+      "integrityStatus": "NOT_VERIFIED_LOCALLY",
+      "localArchiveBytes": 0,
+      "localArchiveSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "recoveryAttempts": [
+        {
+          "route": "GitHub CLI Actions artifact ZIP API",
+          "command": "gh api repos/shuvrajeetkamila/Tri-Core-Browser/actions/artifacts/11911314745/zip",
+          "exitCode": 1,
+          "result": "EOF; zero bytes"
+        },
+        {
+          "route": "GitHub CLI run download by run and artifact name",
+          "command": "gh run download 38599630672 --name TriCoreBrowser-Packaged-Smoke-Diagnostics --dir <external-directory>",
+          "exitCode": 1,
+          "result": "EOF; no files recovered"
+        }
+      ]
+    },
+    {
+      "name": "TriCore-FSR1-D3D12-WARP-POC",
+      "artifactId": 11910799583,
+      "runId": 38599630609,
+      "githubReportedSizeBytes": 59489,
+      "githubReportedSha256": "289e303857558cb2912a0b36453d50393a0afe851c55cfa06add968f47a29839",
+      "expiresAt": "2026-11-13T16:37:52Z",
+      "integrityStatus": "METADATA_ONLY",
+      "downloadAttempted": false,
+      "classification": "D3D12 WARP software harness; not physical-GPU evidence"
+    }
+  ],
+  "graphics": {
+    "packagedRuntimeSmoke": "PASS_AT_LEVEL_A_VALIDATOR_SCOPE",
+    "capturePagePngD3D12WarpDiagnostic": "PASS_AT_LEVEL_A_VALIDATOR_SCOPE; SOFTWARE_ONLY",
+    "webGpuComputeProbe": "UNKNOWN; DIAGNOSTICS AND JOB LOGS UNAVAILABLE",
+    "bundledWebGpuFsr1Scene": "UNKNOWN; VALIDATOR ALLOWS PASS OR SAFE SKIP, EXACT STATUS UNAVAILABLE",
+    "physicalGpu": "NOT RUN; LEVEL B JOB SKIPPED",
+    "ordinaryPageUpscaling": "NOT IMPLEMENTED",
+    "dlss": "NOT IMPLEMENTED"
+  },
+  "dependencySecurity": {
+    "packageLockVersion": 3,
+    "lockedPackageEntries": 322,
+    "packageLockSha256": "24708fc5609edbc5eaf4d6ad7f4042dad9f25d3e961de24e44d2ce7c12f522c6",
+    "fullAudit": {
+      "status": "FAIL",
+      "command": "npm audit --json --package-lock-only",
+      "exitCode": 1,
+      "counts": {
+        "informational": 0,
+        "low": 0,
+        "moderate": 8,
+        "high": 0,
+        "critical": 0
+      },
+      "advisory": "GHSA-hp3w-g68c-fv3c",
+      "affectedPackage": "sprintf-js <=1.1.3",
+      "chain": "electron-builder@26.17.0 -> app-builder-lib@26.17.0 -> nested @electron/get@3.1.0 -> global-agent@3.0.0 -> roarr@2.15.4 -> sprintf-js@1.1.3",
+      "auditJsonPath": "/home/user/m16-audit/2026-10-14_180744_UTC_M16/logs/npm-audit-full.json",
+      "auditJsonSha256": "52842e9e8e5d77cb5f43624ed95bfda36ba00b0fd349ccfa228ad5867989666d"
+    },
+    "highCriticalThreshold": {
+      "status": "PASS_AT_THRESHOLD_ONLY",
+      "command": "npm audit --audit-level=high --json --package-lock-only",
+      "exitCode": 0,
+      "sameEightModerateFindings": true
+    },
+    "registrySnapshot": {
+      "sprintfJsVersionsHighestPublished": "1.1.3",
+      "electronBuilderLatest": "26.15.3",
+      "auditSuggestedBuilder": "26.5.0",
+      "suggestedBuilderIsSemverMajor": true,
+      "remediationApplied": false
+    }
+  },
+  "reproducibility": {
+    "directDependenciesPinnedExactly": true,
+    "lockfileIntegrityMetadataPresent": true,
+    "workflowNodeVersion": "22.22.3",
+    "workflowNpmVersionExplicitlyPinned": false,
+    "workflowWindowsImage": "windows-latest (mutable)",
+    "visualStudioMsvcWindowsSdkVersionsPinnedOrRecorded": false,
+    "cmakeVersionPinnedOrRecorded": false,
+    "localCleanInstallUsedIgnoreScripts": true,
+    "localWindowsPortableBuild": "NOT RUN",
+    "twoIndependentWindowsBinaryHashesCompared": false,
+    "bitForBitReproducibility": "NOT ESTABLISHED",
+    "packageWindowsScriptReplacesExistingStageAndZip": true
+  },
+  "imagesDecision": {
+    "status": "DEFERRED; OWNER DECISION REQUIRED",
+    "originalM8M9Source": "NOT RECOVERED",
+    "implementation": "NOT IMPLEMENTED",
+    "scopeDecisionInM15Note": "defer by default until source is supplied or new scope is explicitly approved"
+  },
+  "externalEvidenceRoot": "/home/user/m16-audit/2026-10-14_180744_UTC_M16",
+  "signedUrlsOrCredentialsRecorded": false
+}
