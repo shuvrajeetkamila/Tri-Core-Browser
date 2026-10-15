@@ -455,6 +455,7 @@ function buildSmokeJobSummary({
   const artifactRows = Object.entries({
     executableCandidate: { name: artifactNames.candidate || 'TriCoreBrowser-Windows-x64-unverified-smoke-candidate', outcome: outcomes.candidateArtifact },
     diagnostics: { name: artifactNames.diagnostics || 'TriCoreBrowser-Packaged-Smoke-Diagnostics', outcome: outcomes.diagnosticsArtifact },
+    m18WindowsDelivery: { name: artifactNames.m18 || 'TriCoreBrowser-Windows-x64-M18', outcome: outcomes.m18Artifact || 'skipped' },
     distributionAssembly: { name: 'Portable distribution assembly', outcome: outcomes.distributionBuild },
     physicalGpuPackage: { name: artifactNames.distribution || 'TriCoreBrowser-Windows-x64-physical-GPU-validated', outcome: outcomes.distributionArtifact },
   }).map(([key, item]) => ({ key, name: item.name, outcome: artifactStepStatus(item.outcome) }));
@@ -631,7 +632,7 @@ function renderSmokeJobSummary(model) {
     const logFence = '`'.repeat(Math.max(3, longestBacktickRun + 1));
     lines.push('', '<details><summary>Last available smoke log lines (redacted and truncated)</summary>', '', `${logFence}text`, ...model.detailLines, logFence, '', '</details>');
   }
-  lines.push('', '### Diagnostic artifacts', '', '| Artifact | Upload step |', '|---|---|');
+  lines.push('', '### GitHub Actions artifacts', '', '| Artifact | Upload step |', '|---|---|');
   const runArtifacts = model.run.url ? `${model.run.url}#artifacts` : '';
   for (const artifact of model.artifacts) {
     const name = runArtifacts ? `[\`${markdownCell(artifact.name)}\`](${runArtifacts})` : `\`${markdownCell(artifact.name)}\``;
@@ -713,6 +714,7 @@ function main(env = process.env) {
       evidenceValidation: env.TRICORE_EVIDENCE_VALIDATION_OUTCOME,
       candidateArtifact: env.TRICORE_CANDIDATE_ARTIFACT_OUTCOME,
       diagnosticsArtifact: env.TRICORE_DIAGNOSTICS_ARTIFACT_OUTCOME,
+      m18Artifact: env.TRICORE_M18_ARTIFACT_OUTCOME,
       distributionBuild: env.TRICORE_DISTRIBUTION_BUILD_OUTCOME,
       distributionArtifact: env.TRICORE_DISTRIBUTION_ARTIFACT_OUTCOME,
     },
@@ -721,6 +723,7 @@ function main(env = process.env) {
     artifactNames: {
       candidate: env.TRICORE_CANDIDATE_ARTIFACT_NAME,
       diagnostics: env.TRICORE_DIAGNOSTICS_ARTIFACT_NAME,
+      m18: env.TRICORE_M18_ARTIFACT_NAME,
       distribution: env.TRICORE_DISTRIBUTION_ARTIFACT_NAME,
     },
     logTail,

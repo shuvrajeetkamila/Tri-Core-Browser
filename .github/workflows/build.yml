@@ -125,6 +125,7 @@ jobs:
             if (Test-Path $stderr) { Get-Content $stderr }
             if (Test-Path $smokeLog) { Get-Content $smokeLog }
             Add-Content -Path $smokeLog -Value "[workflow] Packaged process exit code: $($process.ExitCode)" -Encoding utf8
+            Add-Content -Path $env:GITHUB_ENV -Value "TRICORE_PACKAGED_SMOKE_EXIT_CODE=$($process.ExitCode)" -Encoding utf8
             if ($process.ExitCode -ne 0) { throw "Packaged browser smoke test exited with $($process.ExitCode)." }
             Write-Host "PASS: packaged application smoke process exited successfully ($($exeItem.Length) byte executable)."
           } catch {
@@ -144,6 +145,7 @@ jobs:
           try {
             & node .\scripts\validate-packaged-smoke.cjs --policy optional --directory $fsrSmokeOut --smoke-log $smokeLog
             if ($LASTEXITCODE -ne 0) { throw 'Level A packaged-smoke JSON/PNG evidence validation failed.' }
+            Add-Content -Path $env:GITHUB_ENV -Value 'TRICORE_LEVEL_A_VALIDATOR_EXIT_CODE=0' -Encoding utf8
             $packaged = Get-Content (Join-Path $fsrSmokeOut 'packaged-smoke-summary.json') -Raw | ConvertFrom-Json
             if ($packaged.physicalGpuValidation -ne 'NOT RUN' -or $packaged.releaseEligible -ne $false) { throw 'The optional hosted runner must not claim physical-GPU validation or release eligibility.' }
             Add-Content -Path $env:GITHUB_ENV -Value 'TRICORE_SMOKE_TEST=PASS' -Encoding utf8
@@ -217,6 +219,182 @@ jobs:
             ${{ runner.temp }}/tricore-fsr-integration-smoke/**
           if-no-files-found: ignore
           retention-days: 30
+      - name: Create M18 Windows x64 manifest and portable delivery ZIP
+        id: m18_manifest
+        if: always() && steps.packaged_executable.outcome == 'success' && steps.packaged_smoke.outcome == 'success' && steps.validate_packaged_smoke_evidence.outcome == 'success'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $repoRoot = $PWD.Path
+          $release = Join-Path $repoRoot 'release'
+          $exePath = Join-Path $release 'TriCoreBrowser.exe'
+          $manifestPath = Join-Path $release 'M18_BUILD_MANIFEST.json'
+          $zipPath = Join-Path $release 'TriCoreBrowser-Windows-x64-M18.zip'
+          $hashManifestPath = Join-Path $release 'M18_ARTIFACT_HASHES.txt'
+          if (-not (Test-Path -LiteralPath $exePath -PathType Leaf)) { throw 'M18 executable is missing.' }
+          if ($env:TRICORE_PACKAGED_SMOKE_EXIT_CODE -ne '0') { throw 'M18 artifact requires a recorded successful packaged smoke exit code.' }
+          if ($env:TRICORE_LEVEL_A_VALIDATOR_EXIT_CODE -ne '0') { throw 'M18 artifact requires a recorded successful Level A validator exit code.' }
+
+          $exeItem = Get-Item -LiteralPath $exePath
+          $exeSha256 = (Get-FileHash -LiteralPath $exePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          $authenticode = Get-AuthenticodeSignature -LiteralPath $exePath
+          $packageLockSha256 = (Get-FileHash -LiteralPath (Join-Path $repoRoot 'package-lock.json') -Algorithm SHA256).Hash.ToLowerInvariant()
+          $smokeOut = $env:TRICORE_FSR_SMOKE_OUT
+          $smokeSummaryPath = Join-Path $smokeOut 'packaged-smoke-summary.json'
+          if (-not (Test-Path -LiteralPath $smokeSummaryPath -PathType Leaf)) { throw 'Validated packaged-smoke summary is missing.' }
+          $packaged = Get-Content -LiteralPath $smokeSummaryPath -Raw | ConvertFrom-Json
+
+          $nodeVersion = ([string](& node --version)).Trim()
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to record the Node.js version.' }
+          $npmVersion = ([string](& npm --version)).Trim()
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to record the npm version.' }
+          $cmakeOutput = @(& cmake --version)
+          $cmakeVersion = if ($LASTEXITCODE -eq 0 -and $cmakeOutput.Count -gt 0) { [string]$cmakeOutput[0] } else { 'not reported' }
+          $visualStudioVersion = 'not reported'
+          $vswherePath = Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (Test-Path -LiteralPath $vswherePath -PathType Leaf) {
+            $vswhereOutput = @(& $vswherePath -latest -products '*' -property installationVersion 2>$null)
+            if ($LASTEXITCODE -eq 0 -and $vswhereOutput.Count -gt 0) { $visualStudioVersion = ([string]$vswhereOutput[0]).Trim() }
+          }
+          $windowsSdkVersion = 'not reported'
+          $cmakeCachePath = Join-Path $repoRoot 'build/fsr1-poc/CMakeCache.txt'
+          if (Test-Path -LiteralPath $cmakeCachePath -PathType Leaf) {
+            $sdkLine = Select-String -LiteralPath $cmakeCachePath -Pattern '^CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION(:STRING)?=' | Select-Object -First 1
+            if ($sdkLine) { $windowsSdkVersion = ($sdkLine.Line -split '=', 2)[1].Trim() }
+          }
+          $windows = Get-CimInstance -ClassName Win32_OperatingSystem
+          $manifest = [ordered]@{
+            schemaVersion = 1
+            milestone = 'M18'
+            product = 'Tri-Core Browser'
+            source = [ordered]@{
+              repository = $env:GITHUB_REPOSITORY
+              commit = $env:GITHUB_SHA
+              ref = $env:GITHUB_REF
+              packageLockSha256 = $packageLockSha256
+            }
+            workflow = [ordered]@{
+              runId = $env:GITHUB_RUN_ID
+              runAttempt = $env:GITHUB_RUN_ATTEMPT
+              runUrl = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+            }
+            environment = [ordered]@{
+              runnerImage = 'windows-latest'
+              runnerOS = $env:RUNNER_OS
+              runnerArchitecture = $env:RUNNER_ARCH
+              windowsCaption = $windows.Caption
+              windowsVersion = $windows.Version
+              windowsBuild = $windows.BuildNumber
+              windowsArchitecture = $windows.OSArchitecture
+              nodeVersion = $nodeVersion
+              npmVersion = $npmVersion
+              cmakeVersion = $cmakeVersion
+              visualStudioInstallationVersion = $visualStudioVersion
+              windowsSdkVersion = $windowsSdkVersion
+            }
+            build = [ordered]@{
+              command = 'npm run package:win'
+              electronBuilderTarget = 'portable'
+              architecture = 'x64'
+              executablePath = 'release/TriCoreBrowser.exe'
+            }
+            checks = [ordered]@{
+              automatedTests = 'PASS (npm test step succeeded)'
+              packagedSmokeExitCode = [int]$env:TRICORE_PACKAGED_SMOKE_EXIT_CODE
+              levelAValidatorExitCode = [int]$env:TRICORE_LEVEL_A_VALIDATOR_EXIT_CODE
+              levelA = 'PASS'
+            }
+            graphicsAcceptance = [ordered]@{
+              bundledSceneWebGpuFsr1 = [string]$packaged.webGpuAcceptance.status
+              physicalGpuLevelB = [string]$packaged.physicalGpuValidation
+              releaseEligible = [bool]$packaged.releaseEligible
+            }
+            executable = [ordered]@{
+              fileName = 'TriCoreBrowser.exe'
+              sizeBytes = [long]$exeItem.Length
+              sha256 = $exeSha256
+              authenticodeStatus = [string]$authenticode.Status
+            }
+          }
+          $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestPath -Encoding utf8
+
+          $staging = Join-Path $env:RUNNER_TEMP ('tricore-m18-delivery-' + [guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $staging | Out-Null
+          $deliveryFiles = @(
+            @{ Path = $exePath; Name = 'TriCoreBrowser.exe' },
+            @{ Path = $manifestPath; Name = 'M18_BUILD_MANIFEST.json' },
+            @{ Path = (Join-Path $repoRoot 'README.md'); Name = 'README.md' },
+            @{ Path = (Join-Path $repoRoot 'LICENSE'); Name = 'LICENSE' },
+            @{ Path = (Join-Path $repoRoot 'THIRD_PARTY_NOTICES.txt'); Name = 'THIRD_PARTY_NOTICES.txt' },
+            @{ Path = (Join-Path $repoRoot 'docs/KNOWN_LIMITATIONS.md'); Name = 'KNOWN_LIMITATIONS.md' }
+          )
+          foreach ($file in $deliveryFiles) {
+            if (-not (Test-Path -LiteralPath $file.Path -PathType Leaf)) { throw "Required M18 delivery file is missing: $($file.Name)" }
+            Copy-Item -LiteralPath $file.Path -Destination (Join-Path $staging $file.Name)
+          }
+          if (Test-Path -LiteralPath $zipPath) { throw 'Refusing to overwrite an existing M18 delivery ZIP.' }
+          Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $zipPath -CompressionLevel Optimal
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
+          try {
+            $entryNames = @($archive.Entries | ForEach-Object { $_.FullName } | Sort-Object)
+            $expectedNames = @('KNOWN_LIMITATIONS.md', 'LICENSE', 'M18_BUILD_MANIFEST.json', 'README.md', 'THIRD_PARTY_NOTICES.txt', 'TriCoreBrowser.exe') | Sort-Object
+            if (($entryNames -join "`n") -ne ($expectedNames -join "`n")) { throw "M18 delivery ZIP has unexpected entries: $($entryNames -join ', ')" }
+            $zippedExe = $archive.GetEntry('TriCoreBrowser.exe')
+            if (-not $zippedExe -or $zippedExe.Length -ne $exeItem.Length) { throw 'M18 delivery ZIP executable size does not match the validated executable.' }
+          } finally {
+            $archive.Dispose()
+          }
+
+          $zipItem = Get-Item -LiteralPath $zipPath
+          $zipSha256 = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          $manifestSha256 = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          $hashLines = @(
+            "sourceCommit=$env:GITHUB_SHA",
+            "workflowRunId=$env:GITHUB_RUN_ID",
+            "packagedSmokeExitCode=$env:TRICORE_PACKAGED_SMOKE_EXIT_CODE",
+            "levelAValidatorExitCode=$env:TRICORE_LEVEL_A_VALIDATOR_EXIT_CODE",
+            "TriCoreBrowser.exe bytes=$($exeItem.Length) sha256=$exeSha256",
+            "TriCoreBrowser-Windows-x64-M18.zip bytes=$($zipItem.Length) sha256=$zipSha256",
+            "M18_BUILD_MANIFEST.json bytes=$((Get-Item -LiteralPath $manifestPath).Length) sha256=$manifestSha256"
+          )
+          Set-Content -LiteralPath $hashManifestPath -Value $hashLines -Encoding ascii
+          $artifactName = "TriCoreBrowser-Windows-x64-M18-EXE-$exeSha256-BYTES-$($exeItem.Length)-ZIP-BYTES-$($zipItem.Length)-SHA256-$zipSha256-NODE-$nodeVersion-NPM-$npmVersion"
+          if ($artifactName.Length -gt 255) { throw 'M18 artifact name exceeds GitHub Actions limit.' }
+          Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value @(
+            "exe_sha256=$exeSha256",
+            "exe_size=$($exeItem.Length)",
+            "zip_size=$($zipItem.Length)",
+            "zip_sha256=$zipSha256",
+            "node_version=$nodeVersion",
+            "npm_version=$npmVersion",
+            "artifact_name=$artifactName"
+          ) -Encoding utf8
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value @(
+            '## M18 Windows x64 deliverable',
+            '',
+            "- Source commit: ``$env:GITHUB_SHA``",
+            "- Run ID: ``$env:GITHUB_RUN_ID``",
+            "- Executable: ``TriCoreBrowser.exe`` — $($exeItem.Length) bytes; SHA-256 ``$exeSha256``",
+            "- Convenience ZIP: ``TriCoreBrowser-Windows-x64-M18.zip`` — $($zipItem.Length) bytes; SHA-256 ``$zipSha256``",
+            "- Packaged smoke exit: $env:TRICORE_PACKAGED_SMOKE_EXIT_CODE; Level A validator exit: $env:TRICORE_LEVEL_A_VALIDATOR_EXIT_CODE",
+            "- Bundled-scene WebGPU/FSR1: $($packaged.webGpuAcceptance.status); physical GPU Level B: $($packaged.physicalGpuValidation); release eligible: $($packaged.releaseEligible)"
+          ) -Encoding utf8
+          Write-Host "M18 executable SHA-256: $exeSha256 ($($exeItem.Length) bytes)"
+          Write-Host "M18 delivery ZIP SHA-256: $zipSha256 ($($zipItem.Length) bytes)"
+      - name: Upload verified M18 Windows x64 deliverable
+        id: m18_windows_artifact
+        if: always() && steps.m18_manifest.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ${{ steps.m18_manifest.outputs.artifact_name }}
+          path: |
+            release/TriCoreBrowser.exe
+            release/TriCoreBrowser-Windows-x64-M18.zip
+            release/M18_BUILD_MANIFEST.json
+            release/M18_ARTIFACT_HASHES.txt
+          if-no-files-found: error
+          retention-days: 30
       - name: Assemble portable distribution and reports (physical-GPU validated only)
         id: assemble_portable_distribution
         if: env.TRICORE_FSR_INTEGRATION_SMOKE == 'PASS'
@@ -263,10 +441,12 @@ jobs:
           TRICORE_EVIDENCE_VALIDATION_OUTCOME: ${{ steps.validate_packaged_smoke_evidence.outcome }}
           TRICORE_CANDIDATE_ARTIFACT_OUTCOME: ${{ steps.packaged_smoke_candidate.outcome }}
           TRICORE_DIAGNOSTICS_ARTIFACT_OUTCOME: ${{ steps.packaged_smoke_diagnostics.outcome }}
+          TRICORE_M18_ARTIFACT_OUTCOME: ${{ steps.m18_windows_artifact.outcome }}
           TRICORE_DISTRIBUTION_BUILD_OUTCOME: ${{ steps.assemble_portable_distribution.outcome }}
           TRICORE_DISTRIBUTION_ARTIFACT_OUTCOME: ${{ steps.upload_portable_distribution.outcome }}
           TRICORE_CANDIDATE_ARTIFACT_NAME: TriCoreBrowser-Windows-x64-unverified-smoke-candidate
           TRICORE_DIAGNOSTICS_ARTIFACT_NAME: TriCoreBrowser-Packaged-Smoke-Diagnostics
+          TRICORE_M18_ARTIFACT_NAME: ${{ steps.m18_manifest.outputs.artifact_name }}
           TRICORE_DISTRIBUTION_ARTIFACT_NAME: TriCoreBrowser-Windows-x64
         run: node scripts/write-smoke-job-summary.cjs
 

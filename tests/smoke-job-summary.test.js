@@ -189,15 +189,31 @@ function runSummary(reports, overrides = {}) {
     outcomes: {
       package: 'success', executableValidation: 'success', smoke: 'success',
       evidenceValidation: overrides.outcomes?.smoke === 'failure' ? 'NOT RUN' : 'PASS',
-      candidateArtifact: 'success', diagnosticsArtifact: 'success', distributionBuild: 'skipped',
-      distributionArtifact: 'skipped', ...overrides.outcomes,
+      candidateArtifact: 'success', diagnosticsArtifact: 'success', m18Artifact: 'skipped',
+      distributionBuild: 'skipped', distributionArtifact: 'skipped', ...overrides.outcomes,
     },
     reports,
     reportErrors: overrides.reportErrors || {},
     logTail: overrides.logTail || [],
-    artifactNames: { diagnostics: 'TriCoreBrowser-Packaged-Smoke-Diagnostics' },
+    artifactNames: { diagnostics: 'TriCoreBrowser-Packaged-Smoke-Diagnostics', ...overrides.artifactNames },
   });
 }
+
+test('the job summary records the post-smoke M18 artifact name and upload outcome', () => {
+  const compute = unavailableCompute();
+  const fsr = unavailableFsr();
+  const packaged = packagedReport(compute, fsr);
+  const artifactName = 'TriCoreBrowser-Windows-x64-M18-EXE-' + 'a'.repeat(64) + '-BYTES-109000000-ZIP-BYTES-112000000-SHA256-' + 'b'.repeat(64) + '-NODE-v22.22.3-NPM-10.9.8';
+  const model = runSummary({ packaged, compute, fsr }, {
+    outcomes: { m18Artifact: 'success' },
+    artifactNames: { m18: artifactName },
+  });
+  const row = model.artifacts.find((artifact) => artifact.key === 'm18WindowsDelivery');
+  assert.deepEqual(row, { key: 'm18WindowsDelivery', name: artifactName, outcome: 'UPLOADED' });
+  const markdown = renderSmokeJobSummary(model);
+  assert.ok(markdown.includes(artifactName));
+  assert.ok(markdown.includes('`UPLOADED`'));
+});
 
 test('all strict assertions are required before an optional packaged WebGPU FSR pass is summarized as PASS', () => {
   const compute = passingCompute();

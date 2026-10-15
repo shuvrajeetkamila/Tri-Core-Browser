@@ -24,6 +24,42 @@ test('Level A hosted Windows smoke preserves ordinary checks and never gates on 
   assert.ok(validator.includes("'[smoke] Diagnostic-only WebContentsView WebGL2 capture'"), 'the common validator must enforce the PNG route');
 });
 
+test('M18 portable executable and convenience ZIP are hashed and uploaded only after packaged Level A passes', () => {
+  const smoke = buildWorkflow.indexOf('id: packaged_smoke');
+  const levelA = buildWorkflow.indexOf('id: validate_packaged_smoke_evidence');
+  const diagnostics = buildWorkflow.indexOf('id: packaged_smoke_diagnostics');
+  const manifest = buildWorkflow.indexOf('id: m18_manifest');
+  const upload = buildWorkflow.indexOf('id: m18_windows_artifact');
+  const physicalGpuAssembly = buildWorkflow.indexOf('name: Assemble portable distribution and reports (physical-GPU validated only)');
+  assert.ok(smoke >= 0 && levelA > smoke, 'packaged smoke must precede Level A validation');
+  assert.ok(diagnostics > levelA && manifest > diagnostics && upload > manifest, 'M18 delivery follows Level A validation and diagnostics handling');
+  assert.ok(physicalGpuAssembly > upload, 'the M18 portable artifact must not be gated behind physical-GPU-only ZIP assembly');
+
+  const manifestSection = buildWorkflow.slice(manifest, upload);
+  assert.ok(manifestSection.includes("steps.packaged_smoke.outcome == 'success'"));
+  assert.ok(manifestSection.includes("steps.validate_packaged_smoke_evidence.outcome == 'success'"));
+  assert.ok(manifestSection.includes('TRICORE_PACKAGED_SMOKE_EXIT_CODE'));
+  assert.ok(manifestSection.includes('TRICORE_LEVEL_A_VALIDATOR_EXIT_CODE'));
+  assert.ok(manifestSection.includes('Get-FileHash -LiteralPath $exePath -Algorithm SHA256'));
+  assert.ok(manifestSection.includes('Get-AuthenticodeSignature -LiteralPath $exePath'));
+  assert.ok(manifestSection.includes('authenticodeStatus = [string]$authenticode.Status'));
+  assert.ok(manifestSection.includes('M18_BUILD_MANIFEST.json'));
+  assert.ok(manifestSection.includes('M18_ARTIFACT_HASHES.txt'));
+  assert.ok(manifestSection.includes('TriCoreBrowser-Windows-x64-M18.zip'));
+  assert.ok(manifestSection.includes('physicalGpuLevelB = [string]$packaged.physicalGpuValidation'));
+  assert.ok(manifestSection.includes('artifact_name=$artifactName'));
+  assert.ok(manifestSection.includes('zip_size=$($zipItem.Length)'));
+  assert.ok(manifestSection.includes('TriCoreBrowser-Windows-x64-M18-EXE-$exeSha256-BYTES-'));
+  assert.ok(manifestSection.includes('ZIP-BYTES-$($zipItem.Length)-SHA256-$zipSha256'));
+
+  const uploadSection = buildWorkflow.slice(upload, physicalGpuAssembly);
+  assert.ok(uploadSection.includes('name: ${{ steps.m18_manifest.outputs.artifact_name }}'));
+  assert.ok(uploadSection.includes('release/TriCoreBrowser.exe'));
+  assert.ok(uploadSection.includes('release/TriCoreBrowser-Windows-x64-M18.zip'));
+  assert.ok(uploadSection.includes('retention-days: 30'));
+  assert.ok(uploadSection.includes('if-no-files-found: error'));
+});
+
 test('Level B is explicit, opt-in, isolated from ordinary CI, and uses a configured self-hosted Windows GPU runner', () => {
   assert.ok(buildWorkflow.includes('run_physical_gpu_validation'));
   assert.ok(buildWorkflow.includes("github.event.inputs.run_physical_gpu_validation == 'true'"));
