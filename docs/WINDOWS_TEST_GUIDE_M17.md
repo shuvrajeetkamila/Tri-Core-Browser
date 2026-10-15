@@ -4,9 +4,9 @@ This guide keeps the following evidence scopes separate: source/unit tests, a Wi
 
 ## M17 snapshot
 
-At code-under-test commit `cdb0de33e42d7d889170479c376ec89b1197b342`, push run [38615197486](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38615197486) reports a successful hosted Windows x64 portable build, packaged smoke process, and Level A validator. Its candidate and diagnostics artifacts are not locally available. M16 already exhausted two download routes for each of those exact artifact IDs; M17 did not repeat them. The exact packaged independent WebGPU and bundled FSR1 statuses therefore remain **BLOCKED** for independent review.
+The source-under-test is `cdb0de33e42d7d889170479c376ec89b1197b342`. After publication, normal push run [38715925369](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38715925369) on documentation commit `811ff18f749e4f013edefea87175f0b1898623fe` reports a successful hosted Windows x64 portable build, packaged smoke process, and Level A validator. The resulting candidate (`11962019057`) and diagnostics (`11963022874`) metadata is available, but one bounded direct ZIP API attempt for each returned EOF and zero bytes. The prior cdb0 IDs (`11920245773`, `11919901023`) were not retried because M16 had already exhausted two routes for each. Exact packaged independent WebGPU and bundled FSR1 statuses therefore remain **BLOCKED** for independent review.
 
-The separate native D3D12/WARP run [38615197489](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38615197489) reports a successful one-frame software harness. Its artifact ID `11920425376` also returned EOF on two bounded routes in M17, with no archive to inspect. WARP is software and never satisfies the physical-GPU gate.
+The separate M17 native D3D12/WARP run [38715925421](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38715925421) reports a successful one-frame software harness. New artifact ID `11962568184` returned EOF/zero bytes on one direct ZIP API attempt; the earlier ID `11920425376` had two routes exhausted. WARP is software and never satisfies the physical-GPU gate.
 
 No local Windows build was possible in the Linux sandbox: PowerShell, CMake, Wine, an Electron runtime payload, a desktop/browser, and `/dev/dri` were absent. The local `npm ci --ignore-scripts` and Vite build are source checks only, not Windows packaging. No unsafe GPU flag or security bypass was used. The physical-GPU workflow was not dispatched; its runner-list endpoint returned HTTP 403, which leaves runner availability unknown.
 
@@ -143,14 +143,21 @@ Physical acceptance requires a named non-software adapter and active driver, req
 
 ## 6. Recover artifacts safely
 
-GitHub metadata for the cdb0 package run `38615197486`:
+GitHub metadata for the earlier cdb0 package run `38615197486`:
 
 | Artifact | ID | Remote size | Reported SHA-256 | Local state |
 |---|---:|---:|---|---|
 | `TriCoreBrowser-Windows-x64-unverified-smoke-candidate` | `11920245773` | 109,717,102 | `cb714b55971079ccd56a6b55aa67b555da5d0275c3f0370ec1b8af0746262f8c` | M16 exhausted two routes; M17 did not repeat. |
 | `TriCoreBrowser-Packaged-Smoke-Diagnostics` | `11919901023` | 737,251 | `251f7d73c56326e8e4a415514ceaa8bfaef935848b662d16d90ff4fbef754eba` | M16 exhausted two routes; M17 did not repeat. |
 
-The native WARP artifact `11920425376` reports 59,487 bytes and SHA-256 `d599dea6528bc55d3d8f3816de32e57103cfdab5ba62a5b4c6bce72c213e2dda`; both M17 command-line routes returned EOF with zero bytes/files. Do not keep retrying the same artifact IDs/routes. If a new artifact is produced by a later run, treat it as a new artifact ID and use an authorized route without exposing signed URLs.
+Current M17 normal-push run `38715925369` artifact metadata:
+
+| Artifact | ID | Remote size | Reported SHA-256 | Local state |
+|---|---:|---:|---|---|
+| `TriCoreBrowser-Windows-x64-unverified-smoke-candidate` | `11962019057` | 109,713,620 | `52c77f2fab4738355eaa56d6fe4518db6965b19050f83a96882d02ff33e64e1d` | One direct ZIP API attempt returned EOF/zero bytes; not extracted or executed. |
+| `TriCoreBrowser-Packaged-Smoke-Diagnostics` | `11963022874` | 730,363 | `47c4449db01f124bb5bbdd31c8ec8ca501ca7d86adda39328d80efcb6c78ebc2` | One direct ZIP API attempt returned EOF/zero bytes; contents unavailable. |
+
+The earlier WARP artifact `11920425376` reports 59,487 bytes and SHA-256 `d599dea6528bc55d3d8f3816de32e57103cfdab5ba62a5b4c6bce72c213e2dda`; its two distinct routes returned EOF. The M17 push WARP artifact `11962568184` reports 59,486 bytes and SHA-256 `e0e90e953c017bf8a2ebc87b01cfe0fc96c6e4c63cbc6f192aa6be3131e69f76`; one direct ZIP API attempt returned EOF/zero bytes. These remote values are not local verification. No second route was used for the new IDs because the ZIP API failed and the alternative CLI route auto-extracts before a local digest check. A later run creates new artifact IDs; treat each as new and do not retry exhausted IDs/routes.
 
 Before inspecting any recovered ZIP:
 
@@ -160,7 +167,7 @@ Before inspecting any recovered ZIP:
 4. Extract diagnostics only to a new isolated directory, then validate the JSON schemas and image dimensions/hashes offline. Never run a candidate executable merely because the archive hash matches.
 5. Keep remote digest distinct from a local digest. Hash/provenance success does not certify code safety, signatures, or malware-free status.
 
-The cdb0 candidate is explicitly **unverified** and was uploaded before the smoke step. Do not execute it until provenance, archive integrity, content, and any required static/signature review are complete. A failed artifact route may print a temporary signed redirect in CLI diagnostics; do not copy, store, or share it.
+The candidate is explicitly **unverified** and was uploaded before the smoke step. Do not execute it until provenance, archive integrity, content, and any required static/signature review are complete. A failed artifact route may print a temporary signed redirect in CLI diagnostics; do not copy, store, or share it. A prior WARP CLI error did emit such a temporary redirect; the saved external log was immediately redacted and the URL is not reproduced or reused.
 
 ## 7. Build reproducibility and release boundary
 
@@ -176,5 +183,7 @@ External Linux source-check evidence is under `/home/user/m17-audit/2026-10-15_0
 - `logs/npm-test-clean-sandbox.log` — 100/100 tests, exit 0.
 - `logs/renderer-build.log` and `renderer-build-cdb0/` — Vite output outside Git.
 - `logs/audit-full.json`, `logs/audit-high.json`, `logs/npm-ls.json`, `logs/dependency-audit.log` — repeat audit/tree evidence.
-- `logs/warp-artifact-retrieval-1.txt` and redacted `logs/warp-artifact-gh-run-download.log` — current WARP artifact retrieval attempts.
+- `M17_postpublication_evidence.log` — safe, filtered post-push workflow/PR/artifact metadata and exit results.
+- `logs/windows-candidate-run38715925369-id11962019057-retrieval.json`, `logs/packaged-diagnostics-run38715925369-id11963022874-retrieval.json`, and `logs/native-warp-run38715925421-id11962568184-retrieval.json` — direct API recovery attempts; redacted stderr references.
+- `logs/warp-artifact-retrieval-1.txt` and redacted `logs/warp-artifact-gh-run-download.log` — earlier WARP artifact retrieval attempts; the signed redirect is not retained.
 - `prechange-preservation-hashes.tsv`, `worktree-baseline.tsv`, and `remote-cdb0-tree-comparison.tsv` — pre-edit preservation/reconciliation evidence.
