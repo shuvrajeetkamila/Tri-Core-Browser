@@ -1,0 +1,70 @@
+name: Windows AMD FSR1 native POC
+
+on:
+  push:
+    branches:
+      - main
+      - 'arena/**'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  d3d12-warp-smoke:
+    name: Build and exercise isolated D3D12 FSR1 harness (WARP only)
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Configure native project
+        run: cmake -S native/fsr1-poc -B build/fsr1-poc -A x64
+      - name: Build native project
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $buildOutput = & cmake --build build/fsr1-poc --config Release --parallel 2>&1
+          $buildExitCode = $LASTEXITCODE
+          $buildOutput | ForEach-Object { Write-Host $_ }
+          if ($buildExitCode -ne 0) {
+            $diagnostics = @($buildOutput | Where-Object { ([string]$_) -match '(?i)(error C[0-9]+|fatal error|: error:|FAILED:|error MSB[0-9]+)' })
+            if ($diagnostics.Count -eq 0) { $diagnostics = @($buildOutput | Select-Object -Last 25) }
+            foreach ($diagnostic in $diagnostics) {
+              $message = ([string]$diagnostic).Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+              Write-Output "::error title=Native C++ build diagnostic::$message"
+            }
+            $summary = @('### Native C++ build diagnostics', '', '```text') + @($buildOutput | ForEach-Object { [string]$_ }) + @('```')
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ($summary -join "`n") -Encoding utf8
+            exit $buildExitCode
+          }
+      - name: Execute official FSR EASU and RCAS on D3D12 WARP
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Join-Path $PWD 'build/fsr1-poc/Release/TriCoreFsr1Poc.exe'
+          $out = Join-Path $env:RUNNER_TEMP 'fsr1-poc-results'
+          if (-not (Test-Path $exe -PathType Leaf)) { throw 'Native FSR1 executable was not produced.' }
+          & $exe --warp --out-dir $out
+          if ($LASTEXITCODE -ne 0) { throw "Native WARP smoke run exited with $LASTEXITCODE." }
+          $reportPath = Join-Path $out 'fsr1-native-report.json'
+          if (-not (Test-Path $reportPath -PathType Leaf)) { throw 'Native FSR report was not produced.' }
+          $report = Get-Content $reportPath -Raw | ConvertFrom-Json
+          if ($report.status -ne 'PASS') { throw "Unexpected native harness status: $($report.status)" }
+          if ($report.softwareAdapter -ne $true) { throw 'WARP report incorrectly identifies the software adapter.' }
+          if (-not $report.physicalGpuGate.StartsWith('NOT RUN')) { throw 'WARP report must keep physical-GPU validation NOT RUN.' }
+          if ($report.processedFrames -ne 1) { throw 'Native harness did not report exactly one synthetic test frame.' }
+          foreach ($image in $report.images) {
+            $imagePath = Join-Path $out $image
+            if (-not (Test-Path $imagePath -PathType Leaf) -or (Get-Item $imagePath).Length -le 54) { throw "Expected non-empty image capture: $image" }
+          }
+          Write-Host 'PASS: D3D12 WARP executed AMD FSR1 EASU + RCAS and captured the output. Physical-GPU/AMD-vendor gates remain NOT RUN.'
+      - name: Upload software-only POC evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: TriCore-FSR1-D3D12-WARP-POC
+          path: ${{ runner.temp }}/fsr1-poc-results/
+          if-no-files-found: warn
+          retention-days: 30

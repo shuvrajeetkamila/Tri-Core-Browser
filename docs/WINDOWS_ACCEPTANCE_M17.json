@@ -1,0 +1,861 @@
+{
+  "schemaVersion": 1,
+  "milestone": "M17",
+  "assessmentDate": "2026-10-15",
+  "timezone": "Asia/Kolkata",
+  "branch": "arena/18bfbe1a-tri-core-browser",
+  "testedCodeCommit": "cdb0de33e42d7d889170479c376ec89b1197b342",
+  "overallStatus": "BLOCKED",
+  "releaseEligible": false,
+  "allowedAcceptanceStatuses": [
+    "PASS",
+    "FAIL",
+    "BLOCKED",
+    "NOT IMPLEMENTED",
+    "NOT APPLICABLE"
+  ],
+  "scope": {
+    "intendedRepositoryPaths": [
+      "docs/MILESTONE_17_REPORT.md",
+      "docs/WINDOWS_TEST_GUIDE_M17.md",
+      "docs/WINDOWS_ACCEPTANCE_M17.json"
+    ],
+    "runtimeSourceChanged": false,
+    "testsChanged": false,
+    "workflowChanged": false,
+    "packageManifestChanged": false,
+    "lockfileChanged": false,
+    "releaseOrTagCreated": false,
+    "m12ToM16Preserved": true,
+    "externalEvidenceRoot": "/home/user/m17-audit/2026-10-15_093129_UTC_M17",
+    "documentationPublication": {
+      "firstCommit": "811ff18f749e4f013edefea87175f0b1898623fe",
+      "command": "git push origin arena/18bfbe1a-tri-core-browser",
+      "exitCode": 0,
+      "fastForward": true,
+      "postPushRemoteTip": "811ff18f749e4f013edefea87175f0b1898623fe",
+      "normalPushTriggeredBuildAndWarpWorkflows": true
+    }
+  },
+  "baselineAndRemoteState": {
+    "status": "PASS",
+    "initialHead": "e27cb207d6be86a346420901a979b831cf849c00",
+    "initialBranch": "arena/18bfbe1a-tri-core-browser",
+    "initialShallow": true,
+    "initialTrackedPaths": 2,
+    "initialNonignoredUntrackedPaths": 91,
+    "verifiedRemoteHead": "cdb0de33e42d7d889170479c376ec89b1197b342",
+    "remoteTreeBlobCount": 93,
+    "localNonignoredPathsCompared": 93,
+    "exactBlobAndModeMatches": 93,
+    "missingPaths": 0,
+    "mismatchedPaths": 0,
+    "localOnlyPaths": 0,
+    "alignmentMethod": "Verified remote tree first; advanced the existing branch/index without checkout, reset, clean, or worktree replacement.",
+    "preEditBaselineManifest": {
+      "path": "/home/user/m17-audit/2026-10-15_093129_UTC_M17/worktree-baseline.tsv",
+      "sha256": "1a1e21728d2c5af2144166213a8094b046d1def1fe31edc41a5026d9d572d6ad"
+    },
+    "remoteTreeComparison": {
+      "path": "/home/user/m17-audit/2026-10-15_093129_UTC_M17/remote-cdb0-tree-comparison.tsv",
+      "sha256": "b1a11812a7f1e4900ed3c0c0ae558808775328b4409f341f8ed660f13a035590"
+    },
+    "protectedFilesHashManifest": {
+      "path": "/home/user/m17-audit/2026-10-15_093129_UTC_M17/prechange-preservation-hashes.tsv",
+      "entries": 16,
+      "sha256": "2df6cfbb237c82815a3961a29a84d6f2a30354bffea845cb9d3f80251a2eca59"
+    },
+    "branchTipAtSnapshot": "cdb0de33e42d7d889170479c376ec89b1197b342",
+    "worktreeCleanAtSnapshot": true,
+    "indexCleanAtSnapshot": true,
+    "codeTipBeforePublication": "cdb0de33e42d7d889170479c376ec89b1197b342",
+    "branchTipAfterFirstPublication": "811ff18f749e4f013edefea87175f0b1898623fe",
+    "remoteMatchedLocalAfterPublication": true
+  },
+  "pullRequest": {
+    "number": 1,
+    "state": "OPEN",
+    "draft": true,
+    "baseBranch": "main",
+    "headBranch": "arena/18bfbe1a-tri-core-browser",
+    "headSha": "cdb0de33e42d7d889170479c376ec89b1197b342",
+    "mergedOrClosedByM17": false,
+    "headShaAtFirstPublication": "811ff18f749e4f013edefea87175f0b1898623fe",
+    "codeUnderTestSha": "cdb0de33e42d7d889170479c376ec89b1197b342"
+  },
+  "questions": [
+    {
+      "id": "Q01",
+      "question": "Was an external baseline saved before repository edits?",
+      "status": "PASS",
+      "answer": "Yes. The baseline contains 93 nonignored paths and the initial shallow/misaligned Git status.",
+      "evidence": [
+        "/home/user/m17-audit/2026-10-15_093129_UTC_M17/worktree-baseline.tsv",
+        "/home/user/m17-audit/2026-10-15_093129_UTC_M17/git-status.txt"
+      ]
+    },
+    {
+      "id": "Q02",
+      "question": "Was local state reconciled with the remote without overwriting user content?",
+      "status": "PASS",
+      "answer": "All 93 local nonignored paths matched the cdb0 remote tree by Git blob and mode; the existing branch/index were aligned without checkout, reset, or clean.",
+      "evidence": [
+        "/home/user/m17-audit/2026-10-15_093129_UTC_M17/remote-cdb0-tree-comparison.tsv",
+        "/home/user/m17-audit/2026-10-15_093129_UTC_M17/index-read-tree-probe"
+      ]
+    },
+    {
+      "id": "Q03",
+      "question": "What are the current branch, PR, and workflow states?",
+      "status": "PASS",
+      "answer": "Code under test is cdb0de33; first M17 docs publication is 811ff18. PR #1 remained OPEN/DRAFT against main. Normal push Windows/WARP runs and matching PR checks completed successfully; PR Windows and Level B jobs were skipped.",
+      "evidence": [
+        "https://github.com/shuvrajeetkamila/Tri-Core-Browser/pull/1",
+        "https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38615197486",
+        "https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38615197489",
+        "https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38615204524",
+        "https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38615204576",
+        "https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38715925369",
+        "https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38715925421",
+        "https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38715931101",
+        "https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38715931096"
+      ]
+    },
+    {
+      "id": "Q04",
+      "question": "Were the current hosted Windows executable candidate and smoke diagnostics recovered?",
+      "status": "BLOCKED",
+      "answer": "The cdb0 candidate/diagnostics IDs 11920245773 and 11919901023 already exhausted two routes each in M16 and were not retried. New M17-push IDs 11962019057 and 11963022874 each received one direct ZIP API attempt; both returned EOF and zero bytes. No extraction occurred.",
+      "evidence": [
+        "docs/MILESTONE_16_REPORT.md",
+        "artifactRecovery",
+        "/home/user/m17-audit/2026-10-15_093129_UTC_M17/logs/windows-candidate-run38715925369-id11962019057-retrieval.json",
+        "/home/user/m17-audit/2026-10-15_093129_UTC_M17/logs/packaged-diagnostics-run38715925369-id11963022874-retrieval.json"
+      ]
+    },
+    {
+      "id": "Q05",
+      "question": "Were artifact provenance and bytes independently verified before inspection or execution?",
+      "status": "BLOCKED",
+      "answer": "GitHub run and artifact metadata are available, but no local archive bytes or locally computed matching digest are available. Nothing was extracted or executed.",
+      "evidence": [
+        "windowsActions.packageRun.artifacts",
+        "artifactRecovery"
+      ]
+    },
+    {
+      "id": "Q06",
+      "question": "Was a clean Windows build performed through authorized infrastructure?",
+      "status": "PASS",
+      "answer": "After the recovery attempt failed, a normal M17 docs push triggered fresh Windows run 38715925369 on windows-latest. npm ci, tests, native/portable packaging, EXE size check, packaged smoke, Level A validation, and diagnostics upload all succeeded. No manual dispatch was used; reproducibility is not established.",
+      "evidence": [
+        "https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38615197486",
+        "windowsActions.packageRun",
+        "https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38715925369"
+      ]
+    },
+    {
+      "id": "Q07",
+      "question": "Did the packaged browser pass its bounded Level A smoke?",
+      "status": "PASS",
+      "answer": "Run 38715925369 Windows job 116358469683 reports successful portable build, packaged smoke process, and Level A validator. The candidate bytes were not downloaded or independently executed.",
+      "evidence": [
+        "windowsActions.packageRun.jobs[0].steps",
+        "windowsActions.packageRun.artifacts[0]",
+        "windowsActions.postPublicationPackageRun"
+      ]
+    },
+    {
+      "id": "Q08",
+      "question": "Did the packaged independent WebGPU known-answer compute probe pass?",
+      "status": "BLOCKED",
+      "answer": "The optional Level A validator can accept PASS or a safe SKIPPED state; the per-run report is unavailable, so neither state is asserted.",
+      "evidence": [
+        "artifactRecovery.packagedDiagnostics",
+        "graphicsAcceptance.independentWebGpuCompute"
+      ]
+    },
+    {
+      "id": "Q09",
+      "question": "Did the packaged bundled-scene WebGPU FSR1 EASU/RCAS path pass?",
+      "status": "BLOCKED",
+      "answer": "The source implements the bounded game-owned path, but the exact packaged adapter, shader, pipeline, dispatch, dimensions, and visible-output diagnostics were unavailable.",
+      "evidence": [
+        "graphicsAcceptance.bundledSceneWebGpuFsr1",
+        "docs/BROWSER_FRAME_UPSCALING_DECISION_RECORD.md"
+      ]
+    },
+    {
+      "id": "Q10",
+      "question": "What does the separate D3D12/WARP processing job establish?",
+      "status": "PASS",
+      "answer": "M17 push run 38715925421 job 116358470328 reports successful configure/build and one synthetic D3D12 WARP EASU+RCAS smoke with software identity and physical-GPU status NOT RUN. The output artifact was not recovered.",
+      "evidence": [
+        "https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38615197489",
+        "windowsActions.nativeWarpRun",
+        "https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38715925421",
+        "windowsActions.postPublicationNativeWarpRun"
+      ]
+    },
+    {
+      "id": "Q11",
+      "question": "Was the packaged capturePage PNG to D3D12 WARP diagnostic independently inspected?",
+      "status": "BLOCKED",
+      "answer": "No. The Level A workflow step passed, but its per-run JSON and PNGs were inside the unavailable diagnostics artifact.",
+      "evidence": [
+        "artifactRecovery.packagedDiagnostics",
+        "graphicsAcceptance.packagedCapturePageWarpDiagnostic"
+      ]
+    },
+    {
+      "id": "Q12",
+      "question": "Was an authorized physical-GPU runner available and was Level B run?",
+      "status": "BLOCKED",
+      "answer": "M17 push and PR Level B jobs were skipped. The read-only runner-list API returned HTTP 403, so availability remains unknown; no dispatch or provisioning occurred.",
+      "evidence": [
+        "windowsActions.levelB",
+        ".github/workflows/build.yml",
+        "windowsActions.postPublicationPackageRun",
+        "https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38715931101"
+      ]
+    },
+    {
+      "id": "Q13",
+      "question": "Is the Windows binary bit-for-bit reproducible?",
+      "status": "BLOCKED",
+      "answer": "No reproducibility claim: Windows toolchain versions and local executable bytes are unavailable, and there is no second independent executable hash.",
+      "evidence": [
+        "windowsActions.reproducibility",
+        "docs/WINDOWS_TEST_GUIDE_M17.md"
+      ]
+    },
+    {
+      "id": "Q14",
+      "question": "Does the app upscale ordinary arbitrary web pages?",
+      "status": "NOT IMPLEMENTED",
+      "answer": "Ordinary tabs remain standard Chromium WebContentsView instances. The bundled scene owns its target and does not establish arbitrary-page processing.",
+      "evidence": [
+        "graphicsAcceptance.ordinaryPageUpscaling",
+        "docs/BROWSER_FRAME_UPSCALING_DECISION_RECORD.md"
+      ]
+    },
+    {
+      "id": "Q15",
+      "question": "What architecture options are feasible and recommended?",
+      "status": "PASS",
+      "answer": "Retain the bounded game-owned WebGPU scene. Treat Electron offscreen shared texture as an unvalidated Windows prototype, Chromium/Viz integration as a costly long-term route, and user-selected image/local video as narrower scope. Do not inject into arbitrary pages.",
+      "evidence": [
+        "architectureOptions",
+        "docs/BROWSER_FRAME_UPSCALING_DECISION_RECORD.md"
+      ]
+    },
+    {
+      "id": "Q16",
+      "question": "Is DLSS Super Resolution or Frame Generation implemented?",
+      "status": "NOT IMPLEMENTED",
+      "answer": "No Streamline/native renderer integration, production runtime, application identifier, or genuine DLSS output exists in the app.",
+      "evidence": [
+        "graphicsAcceptance.dlss"
+      ]
+    },
+    {
+      "id": "Q17",
+      "question": "What is the M15 Images decision and current dependency/security posture?",
+      "status": "BLOCKED",
+      "answer": "Images remains deferred by default pending original M8/M9 source or explicit new scope. Source-level Electron safeguards were reviewed; full npm audit fails with eight moderate records from one sprintf-js advisory; the high-only threshold passes.",
+      "evidence": [
+        "imagesDecision",
+        "dependencySecurity",
+        "docs/IMAGES_FEATURE_DECISION_M15.md",
+        "docs/DEPENDENCY_REMEDIATION_PROPOSAL_M15.md"
+      ]
+    },
+    {
+      "id": "Q18",
+      "question": "Is release readiness established and what is the next milestone?",
+      "status": "BLOCKED",
+      "answer": "No. Exact packaged evidence, physical-GPU validation, artifact integrity, dependency risk disposition, and release-trigger review remain open. Recommend M18 Windows Acceptance Closure, then a separate architecture proof only if all-page processing is explicitly required.",
+      "evidence": [
+        "releaseTriggers",
+        "nextMilestone",
+        "graphicsAcceptance"
+      ]
+    }
+  ],
+  "localChecks": {
+    "environment": {
+      "os": "Linux x86_64",
+      "node": "v22.22.3",
+      "npm": "10.9.8",
+      "powershellAvailable": false,
+      "cmakeAvailable": false,
+      "wineAvailable": false,
+      "electronRuntimePayloadInstalled": false,
+      "browserOrDisplayAvailable": false,
+      "devDriAvailable": false
+    },
+    "lockedInstall": {
+      "status": "PASS",
+      "command": "npm ci --ignore-scripts --no-audit --no-fund",
+      "exitCode": 0,
+      "packagesAdded": 298,
+      "scriptsExecuted": false,
+      "packageLockSha256": "24708fc5609edbc5eaf4d6ad7f4042dad9f25d3e961de24e44d2ce7c12f522c6",
+      "evidence": "/home/user/m17-audit/2026-10-15_093129_UTC_M17/logs/npm-ci-ignore-scripts.log",
+      "evidenceSha256": "5af3582ebde5b289478c9a7dab68697fd4ebd7de7e7ee804557308ce1a9dd637"
+    },
+    "unitTests": {
+      "status": "PASS",
+      "command": "npm test",
+      "exitCode": 0,
+      "passed": 100,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "/home/user/m17-audit/2026-10-15_093129_UTC_M17/logs/npm-test-clean-sandbox.log",
+      "evidenceSha256": "dd525b17898285e9568c7ac876d6a4d3023107e9328b3b3e745f98cf4802bd83"
+    },
+    "rendererBuild": {
+      "status": "PASS",
+      "command": "npm run build -- --outDir /home/user/m17-audit/2026-10-15_093129_UTC_M17/renderer-build-cdb0",
+      "exitCode": 0,
+      "viteVersion": "8.3.4",
+      "modulesTransformed": 11,
+      "outputFiles": 11,
+      "outputBytes": 279665,
+      "outputLocationOutsideGit": true,
+      "evidence": "/home/user/m17-audit/2026-10-15_093129_UTC_M17/logs/renderer-build.log",
+      "evidenceSha256": "99b62732ae6d5023bae68ee564d8b6240150dcd3fbef3de3ed769519ea5271d9"
+    },
+    "dependencyTree": {
+      "status": "PASS",
+      "command": "npm ls --all --json",
+      "exitCode": 0,
+      "problems": [],
+      "evidence": "/home/user/m17-audit/2026-10-15_093129_UTC_M17/logs/npm-ls.json",
+      "evidenceSha256": "8c595de8e67de42ebfb0b4a2c0bd99aba6831fdc430e92becfae29675e12d8d4"
+    },
+    "fullAudit": {
+      "status": "FAIL",
+      "command": "npm audit --json --package-lock-only",
+      "exitCode": 1,
+      "vulnerablePackageRecords": 8,
+      "moderate": 8,
+      "high": 0,
+      "critical": 0,
+      "advisory": "GHSA-hp3w-g68c-fv3c",
+      "affectedPackage": "sprintf-js",
+      "affectedRange": "<=1.1.3",
+      "lockedVersion": "1.1.3",
+      "evidence": "/home/user/m17-audit/2026-10-15_093129_UTC_M17/logs/audit-full.json",
+      "evidenceSha256": "52842e9e8e5d77cb5f43624ed95bfda36ba00b0fd349ccfa228ad5867989666d"
+    },
+    "highThresholdAudit": {
+      "status": "PASS",
+      "command": "npm audit --audit-level=high --json --package-lock-only",
+      "exitCode": 0,
+      "sameModerateFindingsAsFullAudit": true,
+      "evidence": "/home/user/m17-audit/2026-10-15_093129_UTC_M17/logs/audit-high.json",
+      "evidenceSha256": "52842e9e8e5d77cb5f43624ed95bfda36ba00b0fd349ccfa228ad5867989666d"
+    },
+    "dependencyAuditScript": {
+      "status": "PASS",
+      "command": "node scripts/dependency-audit.cjs",
+      "exitCode": 0,
+      "moderate": 8,
+      "high": 0,
+      "critical": 0,
+      "evidence": "/home/user/m17-audit/2026-10-15_093129_UTC_M17/logs/dependency-audit.log",
+      "evidenceSha256": "530ee878fdbf51bb8c987f2d643f949890fdbbfc6458a24357ef0db1cc760f46"
+    },
+    "localWindowsPackageBuild": {
+      "status": "BLOCKED",
+      "reason": "Host is Linux and lacks PowerShell, CMake, Wine, Electron runtime payload, browser/display, and GPU device; no local Windows package or packaged GUI smoke was attempted."
+    }
+  },
+  "windowsActions": {
+    "packageRun": {
+      "runId": 38615197486,
+      "event": "push",
+      "headSha": "cdb0de33e42d7d889170479c376ec89b1197b342",
+      "workflowConclusion": "success",
+      "jobId": 116028379007,
+      "runnerLabels": [
+        "windows-latest"
+      ],
+      "successfulSteps": [
+        "Install locked dependencies",
+        "Run automated tests",
+        "Audit full locked dependency tree (fail on high/critical)",
+        "Record full dependency audit",
+        "Build Windows x64 portable executable",
+        "Validate packaged Windows executable",
+        "Upload unverified packaged executable for diagnostics",
+        "Run packaged-app smoke test",
+        "Validate Level A packaged smoke evidence",
+        "Upload packaged smoke diagnostics"
+      ],
+      "skippedSteps": [
+        "Assemble portable distribution and reports (physical-GPU validated only)",
+        "Upload Windows portable package and reports"
+      ],
+      "levelBJobConclusion": "skipped",
+      "artifacts": [
+        {
+          "name": "TriCoreBrowser-Windows-x64-unverified-smoke-candidate",
+          "id": 11920245773,
+          "bytes": 109717102,
+          "githubReportedSha256": "cb714b55971079ccd56a6b55aa67b555da5d0275c3f0370ec1b8af0746262f8c",
+          "expiresAt": "2026-11-13T18:29:54Z",
+          "localBytesRecovered": false
+        },
+        {
+          "name": "TriCoreBrowser-Linux-checks",
+          "id": 11919945533,
+          "bytes": 10274,
+          "githubReportedSha256": "f2dc612a6addc1d3bc98db5929a3748c3e98a296b6da9753348b42d80064ff00",
+          "expiresAt": "2026-11-13T18:27:01Z",
+          "localBytesRecovered": false
+        },
+        {
+          "name": "TriCoreBrowser-Packaged-Smoke-Diagnostics",
+          "id": 11919901023,
+          "bytes": 737251,
+          "githubReportedSha256": "251f7d73c56326e8e4a415514ceaa8bfaef935848b662d16d90ff4fbef754eba",
+          "expiresAt": "2026-11-13T18:30:19Z",
+          "localBytesRecovered": false
+        }
+      ]
+    },
+    "nativeWarpRun": {
+      "runId": 38615197489,
+      "event": "push",
+      "headSha": "cdb0de33e42d7d889170479c376ec89b1197b342",
+      "workflowConclusion": "success",
+      "jobId": 116028378657,
+      "runnerLabels": [
+        "windows-latest"
+      ],
+      "successfulSteps": [
+        "Configure native project",
+        "Build native project",
+        "Execute official FSR EASU and RCAS on D3D12 WARP",
+        "Upload software-only POC evidence"
+      ],
+      "assertedReportRequirements": {
+        "status": "PASS",
+        "softwareAdapter": true,
+        "processedFrames": 1,
+        "physicalGpuGate": "NOT RUN",
+        "eachOutputImageNonempty": true
+      },
+      "artifact": {
+        "name": "TriCore-FSR1-D3D12-WARP-POC",
+        "id": 11920425376,
+        "bytes": 59487,
+        "githubReportedSha256": "d599dea6528bc55d3d8f3816de32e57103cfdab5ba62a5b4c6bce72c213e2dda",
+        "expiresAt": "2026-11-13T18:27:27Z",
+        "localBytesRecovered": false
+      }
+    },
+    "levelB": {
+      "status": "BLOCKED",
+      "pushJobConclusion": "skipped",
+      "pullRequestJobConclusion": "skipped",
+      "requiredLabels": [
+        "self-hosted",
+        "windows",
+        "x64",
+        "gpu"
+      ],
+      "requiresOptInWorkflowDispatch": true,
+      "runnerInventoryQuery": {
+        "status": "BLOCKED",
+        "httpStatus": 403,
+        "message": "Resource not accessible by integration"
+      },
+      "dispatched": false,
+      "runnerProvisioned": false,
+      "permissionsOrSecretsChanged": false,
+      "paidProvisioning": false
+    },
+    "reproducibility": {
+      "status": "BLOCKED",
+      "reason": "One hosted build succeeded, but Windows toolchain versions and local EXE bytes are unavailable; no independent second EXE hash was compared."
+    },
+    "postPublicationPackageRun": {
+      "runId": 38715925369,
+      "event": "push",
+      "headSha": "811ff18f749e4f013edefea87175f0b1898623fe",
+      "sourceUnderTestCommit": "cdb0de33e42d7d889170479c376ec89b1197b342",
+      "workflowConclusion": "success",
+      "windowsJobId": 116358469683,
+      "windowsRunnerLabels": [
+        "windows-latest"
+      ],
+      "successfulWindowsSteps": [
+        "Install locked dependencies",
+        "Run automated tests",
+        "Audit full locked dependency tree (fail on high/critical)",
+        "Record full dependency audit",
+        "Build Windows x64 portable executable",
+        "Validate packaged Windows executable",
+        "Upload unverified packaged executable for diagnostics",
+        "Run packaged-app smoke test",
+        "Validate Level A packaged smoke evidence",
+        "Upload packaged smoke diagnostics"
+      ],
+      "skippedWindowsSteps": [
+        "Assemble portable distribution and reports (physical-GPU validated only)",
+        "Upload Windows portable package and reports"
+      ],
+      "levelBJobId": 116358471642,
+      "levelBJobConclusion": "skipped",
+      "linuxJobId": 116358469954,
+      "linuxJobConclusion": "success",
+      "artifacts": [
+        {
+          "name": "TriCoreBrowser-Windows-x64-unverified-smoke-candidate",
+          "id": 11962019057,
+          "bytes": 109713620,
+          "githubReportedSha256": "52c77f2fab4738355eaa56d6fe4518db6965b19050f83a96882d02ff33e64e1d",
+          "expiresAt": "2026-11-14T09:54:19Z",
+          "localBytesRecovered": false
+        },
+        {
+          "name": "TriCoreBrowser-Packaged-Smoke-Diagnostics",
+          "id": 11963022874,
+          "bytes": 730363,
+          "githubReportedSha256": "47c4449db01f124bb5bbdd31c8ec8ca501ca7d86adda39328d80efcb6c78ebc2",
+          "expiresAt": "2026-11-14T09:54:46Z",
+          "localBytesRecovered": false
+        },
+        {
+          "name": "TriCoreBrowser-Linux-checks",
+          "id": 11963156086,
+          "bytes": 10274,
+          "githubReportedSha256": "4ef68345f86b3de3041c7b3d91d6ff5a8fb433b364327e903a3899a526e515de",
+          "expiresAt": "2026-11-14T09:50:59Z",
+          "localBytesRecovered": false
+        }
+      ]
+    },
+    "postPublicationNativeWarpRun": {
+      "runId": 38715925421,
+      "event": "push",
+      "headSha": "811ff18f749e4f013edefea87175f0b1898623fe",
+      "sourceUnderTestCommit": "cdb0de33e42d7d889170479c376ec89b1197b342",
+      "workflowConclusion": "success",
+      "jobId": 116358470328,
+      "runnerLabels": [
+        "windows-latest"
+      ],
+      "successfulSteps": [
+        "Configure native project",
+        "Build native project",
+        "Execute official FSR EASU and RCAS on D3D12 WARP",
+        "Upload software-only POC evidence"
+      ],
+      "physicalGpuValidation": "NOT RUN",
+      "artifact": {
+        "name": "TriCore-FSR1-D3D12-WARP-POC",
+        "id": 11962568184,
+        "bytes": 59486,
+        "githubReportedSha256": "e0e90e953c017bf8a2ebc87b01cfe0fc96c6e4c63cbc6f192aa6be3131e69f76",
+        "expiresAt": "2026-11-14T09:52:00Z",
+        "localBytesRecovered": false
+      }
+    },
+    "postPublicationPullRequestRuns": [
+      {
+        "runId": 38715931101,
+        "workflowConclusion": "success",
+        "linuxJobConclusion": "success",
+        "windowsPackageJobConclusion": "skipped",
+        "levelBJobConclusion": "skipped"
+      },
+      {
+        "runId": 38715931096,
+        "workflowConclusion": "success",
+        "nativeWarpJobConclusion": "success"
+      }
+    ]
+  },
+  "artifactRecovery": [
+    {
+      "name": "TriCoreBrowser-Windows-x64-unverified-smoke-candidate",
+      "artifactId": 11920245773,
+      "runId": 38615197486,
+      "status": "BLOCKED",
+      "priorAttemptsInM16": 2,
+      "m17Attempts": 0,
+      "exhaustedRoutes": [
+        "GitHub Actions artifact ZIP API",
+        "gh run download by run and artifact name"
+      ],
+      "localBytes": 0,
+      "extracted": false,
+      "executed": false,
+      "githubDigestIsNotLocalVerification": true
+    },
+    {
+      "name": "TriCoreBrowser-Packaged-Smoke-Diagnostics",
+      "artifactId": 11919901023,
+      "runId": 38615197486,
+      "status": "BLOCKED",
+      "priorAttemptsInM16": 2,
+      "m17Attempts": 0,
+      "exhaustedRoutes": [
+        "GitHub Actions artifact ZIP API",
+        "gh run download by run and artifact name"
+      ],
+      "localBytes": 0,
+      "extracted": false,
+      "contentsReviewed": false
+    },
+    {
+      "name": "TriCore-FSR1-D3D12-WARP-POC",
+      "artifactId": 11920425376,
+      "runId": 38615197489,
+      "status": "BLOCKED",
+      "m17Attempts": 2,
+      "routes": [
+        {
+          "command": "gh api repos/shuvrajeetkamila/Tri-Core-Browser/actions/artifacts/11920425376/zip",
+          "exitCode": 1,
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "error": "EOF"
+        },
+        {
+          "command": "gh run download 38615197489 --name TriCore-FSR1-D3D12-WARP-POC",
+          "exitCode": 1,
+          "files": 0,
+          "error": "EOF"
+        }
+      ],
+      "extracted": false,
+      "contentsReviewed": false
+    },
+    {
+      "name": "TriCoreBrowser-Windows-x64-unverified-smoke-candidate",
+      "artifactId": 11962019057,
+      "runId": 38715925369,
+      "githubReportedBytes": 109713620,
+      "githubReportedSha256": "52c77f2fab4738355eaa56d6fe4518db6965b19050f83a96882d02ff33e64e1d",
+      "status": "BLOCKED",
+      "m17Attempts": 1,
+      "routes": [
+        {
+          "command": "gh api repos/shuvrajeetkamila/Tri-Core-Browser/actions/artifacts/11962019057/zip",
+          "exitCode": 1,
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "error": "EOF"
+        }
+      ],
+      "secondRouteAttempted": false,
+      "extracted": false,
+      "executed": false
+    },
+    {
+      "name": "TriCoreBrowser-Packaged-Smoke-Diagnostics",
+      "artifactId": 11963022874,
+      "runId": 38715925369,
+      "githubReportedBytes": 730363,
+      "githubReportedSha256": "47c4449db01f124bb5bbdd31c8ec8ca501ca7d86adda39328d80efcb6c78ebc2",
+      "status": "BLOCKED",
+      "m17Attempts": 1,
+      "routes": [
+        {
+          "command": "gh api repos/shuvrajeetkamila/Tri-Core-Browser/actions/artifacts/11963022874/zip",
+          "exitCode": 1,
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "error": "EOF"
+        }
+      ],
+      "secondRouteAttempted": false,
+      "extracted": false,
+      "contentsReviewed": false
+    },
+    {
+      "name": "TriCore-FSR1-D3D12-WARP-POC",
+      "artifactId": 11962568184,
+      "runId": 38715925421,
+      "githubReportedBytes": 59486,
+      "githubReportedSha256": "e0e90e953c017bf8a2ebc87b01cfe0fc96c6e4c63cbc6f192aa6be3131e69f76",
+      "status": "BLOCKED",
+      "m17Attempts": 1,
+      "routes": [
+        {
+          "command": "gh api repos/shuvrajeetkamila/Tri-Core-Browser/actions/artifacts/11962568184/zip",
+          "exitCode": 1,
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "error": "EOF"
+        }
+      ],
+      "secondRouteAttempted": false,
+      "extracted": false,
+      "contentsReviewed": false
+    }
+  ],
+  "graphicsAcceptance": {
+    "sourceReviewedBoundedWebGpuFsr1": {
+      "status": "PASS",
+      "description": "Bundled app-owned WebGPU scene renders to a lower-resolution target, dispatches EASU and RCAS, and presents the result to its canvas without CPU pixel readback in the processing loop.",
+      "runtimeConformanceIndependentlyVerified": false
+    },
+    "packagedBrowserLevelA": {
+      "status": "PASS",
+      "evidenceScope": "Hosted Windows packaged process and Level A validator steps report success.",
+      "candidateIndependentlyDownloadedOrLaunched": false
+    },
+    "independentWebGpuCompute": {
+      "status": "BLOCKED",
+      "reason": "Optional report could be PASS or safe SKIPPED; per-run diagnostics unavailable."
+    },
+    "bundledSceneWebGpuFsr1": {
+      "status": "BLOCKED",
+      "reason": "Per-run adapter, shader/pipeline, dispatch, output-dimension, numerical-comparison, and visible-pixel reports unavailable."
+    },
+    "packagedCapturePageWarpDiagnostic": {
+      "status": "BLOCKED",
+      "reason": "Per-run browser-frame summary and PNGs unavailable; remains separate from the bundled WebGPU scene."
+    },
+    "nativeD3d12WarpHarness": {
+      "status": "PASS",
+      "scope": "Hosted workflow reports one synthetic frame on WARP software; no physical-GPU claim.",
+      "artifactContentIndependentlyReviewed": false
+    },
+    "physicalGpuValidation": {
+      "status": "BLOCKED",
+      "workflowReportValue": "NOT RUN",
+      "adapterOrDriverEvidence": false
+    },
+    "ordinaryPageUpscaling": {
+      "status": "NOT IMPLEMENTED",
+      "description": "Ordinary Chromium tabs do not feed the bundled scene's target."
+    },
+    "dlss": {
+      "status": "NOT IMPLEMENTED",
+      "superResolution": false,
+      "frameGeneration": false,
+      "streamlineRuntimeBundled": false
+    }
+  },
+  "architectureOptions": [
+    {
+      "option": "Retain bounded app/game-owned WebGPU FSR1 scene",
+      "status": "PASS",
+      "benefit": "Owned texture, queue, and render graph; no arbitrary-page capture or compositor hook.",
+      "limit": "Only the controlled bundled scene or software explicitly integrating that path; packaged M17 runtime details are blocked by inaccessible diagnostics."
+    },
+    {
+      "option": "Electron experimental offscreen shared texture",
+      "status": "BLOCKED",
+      "benefit": "Documented API can import/send shared texture resources and expose a VideoFrame to a renderer/WebGPU fixture.",
+      "limit": "Separate offscreen contents, experimental lifecycle; Windows end-to-end capture/import/presentation/input/sync has not been validated in this app."
+    },
+    {
+      "option": "Chromium/Viz compositor post-processing",
+      "status": "BLOCKED",
+      "benefit": "Could be the architecture for transparent all-page processing if an owned Electron/Chromium integration were engineered.",
+      "limit": "No public WebContentsView hook; substantial maintained fork, security review, platform and upgrade burden."
+    },
+    {
+      "option": "Dedicated user-selected image/local-video viewer",
+      "status": "NOT APPLICABLE",
+      "benefit": "Narrow, explicit input ownership; most practical browser-adjacent experiment.",
+      "limit": "Not all-page processing; Images remains deferred by default pending owner scope/source decision."
+    },
+    {
+      "option": "Windows Graphics Capture companion output",
+      "status": "BLOCKED",
+      "benefit": "Could be consent-based capture into a separate companion output.",
+      "limit": "Does not replace the source window; latency, protected surfaces, resize, HDR, and interaction are unverified."
+    },
+    {
+      "option": "Page injection, memory inspection, or security bypass",
+      "status": "NOT IMPLEMENTED",
+      "benefit": "None accepted.",
+      "limit": "Rejected as unsupported and unsafe; not used."
+    }
+  ],
+  "imagesDecision": {
+    "decisionReviewStatus": "PASS",
+    "sourceRecovered": false,
+    "featureStatus": "NOT IMPLEMENTED",
+    "defaultDecision": "defer until source is supplied or new scope is explicitly approved",
+    "noImagesCodeAdded": true,
+    "reference": "docs/IMAGES_FEATURE_DECISION_M15.md"
+  },
+  "dependencySecurity": {
+    "lockfileChanged": false,
+    "fullAuditStatus": "FAIL",
+    "fullAuditExitCode": 1,
+    "vulnerablePackageRecords": 8,
+    "moderate": 8,
+    "high": 0,
+    "critical": 0,
+    "singleAdvisory": {
+      "id": "GHSA-hp3w-g68c-fv3c",
+      "package": "sprintf-js",
+      "range": "<=1.1.3",
+      "lockedVersion": "1.1.3",
+      "registryHasLaterVersion": false,
+      "downstreamPath": "electron-builder@26.17.0 -> app-builder-lib@26.17.0 -> @electron/get@3.1.0 -> global-agent@3.0.0 -> roarr@2.15.4 -> sprintf-js@1.1.3"
+    },
+    "highThresholdStatus": "PASS",
+    "highThresholdExitCode": 0,
+    "sourceSecurityReviewStatus": "PASS",
+    "reviewedControls": [
+      "BrowserWindow/WebContentsView sandbox enabled",
+      "context isolation enabled; node integration disabled; web security enabled",
+      "web permission requests denied",
+      "website navigation restricted to HTTP(S)",
+      "narrow contextBridge IPC and main-frame sender validation",
+      "download filenames and revealed paths validated"
+    ],
+    "securityCertificationOrMalwareFreeClaim": false,
+    "candidateMalwareScan": "BLOCKED: candidate bytes unavailable; no scan claim"
+  },
+  "releaseTriggers": {
+    "buildWorkflowPushesToArenaBranches": true,
+    "hostedWindowsLevelAOnNormalPush": true,
+    "physicalLevelBRequiresOptInWorkflowDispatch": true,
+    "nativeWarpWorkflowUsesWindowsHostedRunner": true,
+    "releaseWorkflowPushBranchFilter": "arena/66abfdc9-tri-core-browser",
+    "currentBranchMatchesReleasePushFilter": false,
+    "workflowDispatchUsed": false,
+    "releaseOrTagCreated": false,
+    "reviewStatus": "PASS",
+    "alignmentStatus": "BLOCKED"
+  },
+  "actionsNotTaken": {
+    "manualWorkflowDispatch": false,
+    "physicalRunnerProvisioning": false,
+    "paidPurchases": false,
+    "permissionOrSecretChanges": false,
+    "pushToMain": false,
+    "forcePush": false,
+    "prMergeOrClose": false,
+    "releaseOrTagCreation": false,
+    "npmAuditFix": false,
+    "guessedImagesImplementation": false,
+    "candidateExecution": false
+  },
+  "nextMilestone": {
+    "name": "M18 — Windows Acceptance Closure",
+    "status": "BLOCKED",
+    "prerequisites": [
+      "Authorized access to exact current Windows artifact bytes and diagnostics; verify size/digest before inspection.",
+      "Review exact packaged WebGPU compute and bundled FSR1 JSON/visible-output evidence.",
+      "Owner-authorized use of an already configured physical-GPU Windows runner; no provisioning or permission changes.",
+      "Record Windows image, Node/npm, Visual Studio/MSVC, CMake, SDK, physical adapter, and active driver.",
+      "Owner-approved compatible dependency remediation or explicit moderate-risk disposition.",
+      "Owner review of release-trigger branch alignment and the M15 Images defer/source decision."
+    ],
+    "separateAllPageArchitectureProofOnlyIfRequired": true
+  }
+}

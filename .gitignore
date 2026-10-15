@@ -1,0 +1,14 @@
+node_modules/
+dist/
+release/
+.vite/
+coverage/
+*.log
+*.tmp
+*.exe
+*.zip
+dependency-audit.json
+dependency-tree.json
+.DS_Store
+Thumbs.db
+/build/

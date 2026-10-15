@@ -1,0 +1,169 @@
+{
+  "schemaVersion": 1,
+  "milestone": "M18",
+  "assessmentDate": "2026-10-15",
+  "timezone": "Asia/Kolkata",
+  "branch": "arena/18bfbe1a-tri-core-browser",
+  "implementationCommit": "6c6d05113f6dcd2e8ba3cabb709377f05c888630",
+  "documentedHandoffBuildCommit": "003ec096b275e0f726dec1c3541b85e2d89faed3",
+  "overallStatus": "BLOCKED",
+  "deliverableStatus": "PASS",
+  "releaseEligible": false,
+  "scope": {
+    "workflow": ".github/workflows/build.yml",
+    "workflowChanged": true,
+    "runtimeSourceChanged": false,
+    "packageManifestChanged": false,
+    "lockfileChanged": false,
+    "testsChanged": true,
+    "generatedBinaryCommitted": false,
+    "m12ToM17Preserved": true,
+    "formalReleaseCreated": false,
+    "ownerApprovalClaimed": false
+  },
+  "windowsBuild": {
+    "runId": "38731179031",
+    "runUrl": "https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38731179031",
+    "event": "push",
+    "runConclusion": "success",
+    "jobId": "116409060024",
+    "jobName": "Build and smoke-test Windows x64 portable app",
+    "jobConclusion": "success",
+    "sourceCommit": "003ec096b275e0f726dec1c3541b85e2d89faed3",
+    "runnerImage": "windows-latest",
+    "architecture": "x64",
+    "buildCommand": "npm run package:win",
+    "electronBuilderTarget": "portable",
+    "nodeVersion": "v22.22.3",
+    "npmVersion": "10.9.8",
+    "additionalToolchainDetails": "Windows edition/version/build, CMake, Visual Studio installation version, and Windows SDK are written by the Windows runner into M18_BUILD_MANIFEST.json; artifact bytes were not available locally to read those fields.",
+    "packagedSmoke": {
+      "status": "PASS (CI-reported)",
+      "processExitCode": 0,
+      "launch": "Built release/TriCoreBrowser.exe started with --smoke-test on the hosted Windows runner"
+    },
+    "levelAValidator": {
+      "status": "PASS (CI-reported)",
+      "exitCode": 0
+    },
+    "physicalGpuLevelB": "NOT RUN",
+    "distributionAssembly": "SKIPPED (physical-GPU-only gate)",
+    "artifactUploadStep": "success"
+  },
+  "deliverable": {
+    "artifactId": "11971305924",
+    "artifactName": "TriCoreBrowser-Windows-x64-M18-EXE-7b6a914c21d015b92a9a21434002370f19c841149fa47be0ceb8ef522f7e1ae8-BYTES-109778690-ZIP-BYTES-109710823-SHA256-4ed6c0c4c87a1f9fd8279ca0efe159348fa29f37dc229d2d9edc58f099b5804a-NODE-v22.22.3-NPM-10.9.8",
+    "createdAt": "2026-10-15T12:02:36Z",
+    "expiresAt": "2026-11-14T12:02:28Z",
+    "retentionDays": 30,
+    "outerArtifactSizeBytes": 219445598,
+    "githubReportedOuterArtifactDigest": "sha256:6b5e5d38d85b6cef0a807b4fb7fa6ad96e2929d8e7c0aeb2f19ce3472cf36a1e",
+    "outerArtifactDigestLocallyVerified": false,
+    "files": [
+      {
+        "name": "TriCoreBrowser.exe",
+        "sizeBytes": 109778690,
+        "buildTimeSha256": "7b6a914c21d015b92a9a21434002370f19c841149fa47be0ceb8ef522f7e1ae8",
+        "source": "Windows runner Get-FileHash; embedded in M18 artifact name and manifest",
+        "localBytesDownloadedAndCompared": false
+      },
+      {
+        "name": "TriCoreBrowser-Windows-x64-M18.zip",
+        "sizeBytes": 109710823,
+        "buildTimeSha256": "4ed6c0c4c87a1f9fd8279ca0efe159348fa29f37dc229d2d9edc58f099b5804a",
+        "source": "Windows runner Get-FileHash; embedded in M18 artifact name and hash sidecar",
+        "localBytesDownloadedAndCompared": false,
+        "runnerArchiveCheck": "Expected ZIP entry list and embedded executable size checked after creation"
+      },
+      {
+        "name": "M18_BUILD_MANIFEST.json",
+        "contents": "Source commit, workflow run, lockfile hash, executable hash/size, Authenticode status, runner/Windows/toolchain details, build target, and smoke/acceptance results",
+        "sha256": null,
+        "sha256Availability": "Recorded in M18_ARTIFACT_HASHES.txt; unavailable to this sandbox",
+        "localBytesDownloadedAndCompared": false
+      },
+      {
+        "name": "M18_ARTIFACT_HASHES.txt",
+        "contents": "Build-time hashes and sizes for the EXE, convenience ZIP, and JSON manifest"
+      }
+    ],
+    "officialRunPage": "https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38731179031",
+    "directArtifactFileUrlProvided": false
+  },
+  "earlierSuccessfulWindowsBuild": {
+    "runId": "38729756733",
+    "sourceCommit": "6c6d05113f6dcd2e8ba3cabb709377f05c888630",
+    "artifactId": "11969134344",
+    "artifactOuterSizeBytes": 219482256,
+    "artifactOuterDigest": "sha256:8638ac90a48f0317d57e9fe13af83c42b5c307bb60965c32752cd7e377ef3752",
+    "exeSizeBytes": 109797006,
+    "exeBuildTimeSha256": "ba0280c89296c2c9ac8f75274f04554686c2759fe39e4418b06dbeddf2cc00af",
+    "zipSizeBytes": 109729146,
+    "zipBuildTimeSha256": "044ae6f6fd17b386544e3d64718634143875b264c88d1172c67c03312e040cfc",
+    "note": "Separate successful build; distinct commit/run. Different EXE hash does not establish a reproducibility result."
+  },
+  "separateArtifacts": {
+    "packagedSmokeDiagnostics": {
+      "id": "11970461149",
+      "name": "TriCoreBrowser-Packaged-Smoke-Diagnostics",
+      "sizeBytes": 726693,
+      "githubReportedDigest": "sha256:456c8c34f6aec26f454d48af7daddc08a08ddda5f4354806241b05e1296d028d",
+      "expiresAt": "2026-11-14T12:02:21Z",
+      "localBytesDownloaded": false
+    },
+    "isolatedD3D12Warp": {
+      "runId": "38729756717",
+      "runUrl": "https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38729756717",
+      "conclusion": "success (workflow-reported)",
+      "artifactId": "11969433614",
+      "artifactName": "TriCore-FSR1-D3D12-WARP-POC",
+      "artifactSizeBytes": 59486,
+      "githubReportedDigest": "sha256:7a308c7b72cf993827777c65352c3cc666204b329dbfa8dc08623516e5b28597",
+      "classification": "software-only WARP; not physical-GPU validation and not the packaged WebGPU FSR1 scene"
+    }
+  },
+  "localChecks": {
+    "npmCiIgnoreScripts": "PASS; 298 packages; Linux source checks only",
+    "npmTest": {
+      "status": "PASS",
+      "passed": 102,
+      "failed": 0,
+      "skipped": 0
+    },
+    "viteBuild": "PASS; Vite 8.3.4; renderer only",
+    "npmAuditHighThreshold": "PASS; not a clean full audit",
+    "fullAuditFindings": {
+      "fullAuditExitCode": 1,
+      "moderate": 8,
+      "high": 0,
+      "critical": 0,
+      "advisory": "Existing sprintf-js <=1.1.3 GHSA-hp3w-g68c-fv3c dependency path",
+      "dependencyChangeMade": false
+    }
+  },
+  "graphicsAcceptance": {
+    "independentPackagedWebGpuCompute": "BLOCKED for independent review; per-run report unavailable",
+    "bundledSceneWebGpuFsr1": "BLOCKED for independent review; per-run report/visible output unavailable",
+    "packagedCapturePageD3D12WarpDiagnostic": "BLOCKED for independent artifact review; distinct from WebGPU",
+    "physicalGpuLevelB": "NOT RUN",
+    "ordinaryWebpageUpscaling": "NOT IMPLEMENTED",
+    "dlssSuperResolutionAndFrameGeneration": "NOT IMPLEMENTED"
+  },
+  "artifactRecovery": {
+    "status": "BLOCKED in this sandbox",
+    "reason": "GitHub run/artifact metadata is available, but prior M16-M17 artifact downloads repeatedly returned EOF/zero bytes. The binary content route is not available through the sandbox's restricted outbound hosts; exhausted routes were not repeated.",
+    "executableExtractedOrRunLocally": false,
+    "archiveIntegrityIndependentlyChecked": false,
+    "physicalDesktopLaunchClaimed": false,
+    "hashesAreBuildTimeValuesNotLocalVerification": true
+  },
+  "pullRequest": {
+    "number": 1,
+    "state": "OPEN",
+    "draft": true,
+    "baseBranch": "main",
+    "headBranch": "arena/18bfbe1a-tri-core-browser",
+    "headShaAtDocumentedBuild": "003ec096b275e0f726dec1c3541b85e2d89faed3",
+    "mergedOrClosed": false
+  }
+}

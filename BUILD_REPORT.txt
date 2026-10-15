@@ -1,0 +1,34 @@
+TRI-CORE BROWSER — HISTORICAL BUILD STATUS (NOT CURRENT SOURCE)
+
+This report records results for the older app/source commit below only. It does not cover the current uncommitted source, the immersive fullscreen changes, or current WebGPU/FSR1 packaged acceptance.
+
+Report date (UTC): 2026-10-11
+Repository: https://github.com/shuvrajeetkamila/Tri-Core-Browser
+Source branch: arena/66abfdc9-tri-core-browser
+App/source commit with successful Windows CI: eee56b78a5259429b4e5d7be3b73adf21ec99365
+
+Local verification (Linux):
+Node.js: 22.22.3
+npm: 10.9.8
+Electron: 44.7.0
+Electron Builder: 26.17.0
+Renderer build: PASS (`npm run build`)
+Automated unit tests: PASS (37/37)
+JavaScript syntax checks: PASS
+GitHub workflow YAML parsing: PASS
+Full locked dependency audit: PASS at the high/critical threshold (8 moderate findings; 0 high or critical on 2026-10-11).
+
+Windows packaged build and tests: PASS in [Actions run 38149140832](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38149140832). The Windows x64 executable presence/size check, packaged browser smoke, portable distribution assembly, and artifact upload all passed. The workflow's executable threshold is greater than 30,000,000 bytes; the exact executable and ZIP byte counts are in the generated reports inside the artifact and were not retrieved separately here.
+
+Packaged browser-frame evidence: the gated smoke validated three distinct changing frames, three capture resolutions, Electron `WebContents.capturePage()` PNG inputs, AMD FSR 1.0.2 EASU + RCAS processing through a separate D3D12 helper on WARP, per-frame reports, input/output/reference PNGs, and distinct bilinear-reference paths. WARP is a software adapter; physical-GPU validation remains NOT RUN. This is a bounded test-scene screenshot/readback preview, not zero-copy, real-time, general-page, or performance-improvement evidence.
+
+Native synthetic-input FSR1 WARP regression: PASS in [run 38149140851](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38149140851); software-only component evidence.
+
+Uploaded `TriCoreBrowser-Windows-x64` GitHub Actions artifact: PASS; the artifact API reported an archive size of 223,507,513 bytes. This aggregate is not the executable's or portable ZIP's individual size. The run also uploaded smoke evidence and reports. A public GitHub Release was NOT published; the opt-in release workflow is skipped on ordinary pushes.
+
+Physical GPU / AMD-vendor hardware validation: NOT RUN. WARP is software.
+DLSS / Frame Generation: NOT IMPLEMENTED / NOT TESTED. No authorized NVIDIA Streamline feature runtime is shipped.
+WASM: controlled Chromium/V8 diagnostic compiles and verifies `add(19,23)=42`; it is not an upscaler.
+Ordinary webpages: standard Chromium rendering; no page upscaling is enabled.
+
+This file is a checked-in source/status summary, not the generated Windows build report. The exact per-build executable/ZIP sizes, checksums, captures and native reports are in the successful Windows artifact. Build outputs are ignored by Git and are not committed to source history.
