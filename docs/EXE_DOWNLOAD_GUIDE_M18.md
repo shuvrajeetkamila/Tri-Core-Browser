@@ -1,14 +1,14 @@
 # Download and verify the Windows x64 portable EXE — M18
 
-This is the user handoff for the M18 Windows artifact. It is a GitHub Actions artifact from a successful hosted Windows build—not a GitHub Release. The artifact expires on **2026-11-14 11:52:13 UTC**, so download it before then.
+This is the user handoff for the M18 Windows artifact. It is a GitHub Actions artifact from a successful hosted Windows build—not a GitHub Release. Download it before **2026-11-14 12:02:28 UTC**.
 
 ## Official download page
 
-1. Open the [official Windows build run](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38729756733) and sign in to GitHub if requested.
+1. Open the [recommended Windows build run](https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38731179031) and sign in to GitHub if requested.
 2. In the run's **Artifacts** section, download the artifact whose exact name is:
 
    ```text
-   TriCoreBrowser-Windows-x64-M18-EXE-ba0280c89296c2c9ac8f75274f04554686c2759fe39e4418b06dbeddf2cc00af-BYTES-109797006-ZIP-BYTES-109729146-SHA256-044ae6f6fd17b386544e3d64718634143875b264c88d1172c67c03312e040cfc-NODE-v22.22.3-NPM-10.9.8
+   TriCoreBrowser-Windows-x64-M18-EXE-7b6a914c21d015b92a9a21434002370f19c841149fa47be0ceb8ef522f7e1ae8-BYTES-109778690-ZIP-BYTES-109710823-SHA256-4ed6c0c4c87a1f9fd8279ca0efe159348fa29f37dc229d2d9edc58f099b5804a-NODE-v22.22.3-NPM-10.9.8
    ```
 
 3. GitHub downloads one outer artifact ZIP (about 219 MB). Save it to a new folder, then use **Extract All** in File Explorer. The extracted folder should contain:
@@ -39,10 +39,10 @@ Expected values:
 
 | File | Bytes | SHA-256 |
 |---|---:|---|
-| `TriCoreBrowser.exe` | `109797006` | `ba0280c89296c2c9ac8f75274f04554686c2759fe39e4418b06dbeddf2cc00af` |
-| `TriCoreBrowser-Windows-x64-M18.zip` | `109729146` | `044ae6f6fd17b386544e3d64718634143875b264c88d1172c67c03312e040cfc` |
+| `TriCoreBrowser.exe` | `109778690` | `7b6a914c21d015b92a9a21434002370f19c841149fa47be0ceb8ef522f7e1ae8` |
+| `TriCoreBrowser-Windows-x64-M18.zip` | `109710823` | `4ed6c0c4c87a1f9fd8279ca0efe159348fa29f37dc229d2d9edc58f099b5804a` |
 
-`M18_ARTIFACT_HASHES.txt` inside the artifact provides the same build-time values. The exact artifact's GitHub-reported **outer archive** digest is `sha256:8638ac90a48f0317d57e9fe13af83c42b5c307bb60965c32752cd7e377ef3752`; that digest is different from the EXE and inner ZIP hashes. If you hash the downloaded outer ZIP, compare it separately to that value.
+`M18_ARTIFACT_HASHES.txt` inside the artifact provides the same build-time values. The exact artifact's GitHub-reported **outer archive** digest is `sha256:6b5e5d38d85b6cef0a807b4fb7fa6ad96e2929d8e7c0aeb2f19ce3472cf36a1e`; that digest is different from the EXE and inner ZIP hashes. If you hash the downloaded outer ZIP, compare it separately to that value.
 
 If you prefer the convenience ZIP, right-click `TriCoreBrowser-Windows-x64-M18.zip` → **Extract All**. The Windows build job checked that it contains exactly `TriCoreBrowser.exe`, `M18_BUILD_MANIFEST.json`, `README.md`, `LICENSE`, `THIRD_PARTY_NOTICES.txt`, and `KNOWN_LIMITATIONS.md`, and that the embedded EXE has the expected uncompressed size.
 
@@ -59,4 +59,4 @@ No code-signing certificate was configured by this change; inspect `authenticode
 - The bundled FSR1 scene is not general upscaling of arbitrary web pages. DLSS Super Resolution/Frame Generation and ordinary webpage upscaling remain **not implemented**.
 - This artifact is not a formal release, security certification, malware scan, or claim of bit-for-bit reproducibility.
 
-For run provenance, hashes, scope, and the full M18 evidence assessment, see [`MILESTONE_18_REPORT.md`](MILESTONE_18_REPORT.md) and [`WINDOWS_ACCEPTANCE_M18.json`](WINDOWS_ACCEPTANCE_M18.json).
+For run provenance, the earlier M18 implementation build, hashes, and the full acceptance assessment, see [`MILESTONE_18_REPORT.md`](MILESTONE_18_REPORT.md) and [`WINDOWS_ACCEPTANCE_M18.json`](WINDOWS_ACCEPTANCE_M18.json).

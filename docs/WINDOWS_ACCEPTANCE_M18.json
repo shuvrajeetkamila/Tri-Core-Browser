@@ -5,13 +5,13 @@
   "timezone": "Asia/Kolkata",
   "branch": "arena/18bfbe1a-tri-core-browser",
   "implementationCommit": "6c6d05113f6dcd2e8ba3cabb709377f05c888630",
-  "testedSourceCommit": "6c6d05113f6dcd2e8ba3cabb709377f05c888630",
+  "documentedHandoffBuildCommit": "003ec096b275e0f726dec1c3541b85e2d89faed3",
   "overallStatus": "BLOCKED",
   "deliverableStatus": "PASS",
   "releaseEligible": false,
   "scope": {
-    "workflowChanged": true,
     "workflow": ".github/workflows/build.yml",
+    "workflowChanged": true,
     "runtimeSourceChanged": false,
     "packageManifestChanged": false,
     "lockfileChanged": false,
@@ -22,14 +22,14 @@
     "ownerApprovalClaimed": false
   },
   "windowsBuild": {
-    "runId": "38729756733",
-    "runUrl": "https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38729756733",
+    "runId": "38731179031",
+    "runUrl": "https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38731179031",
     "event": "push",
     "runConclusion": "success",
-    "jobId": "116404337527",
+    "jobId": "116409060024",
     "jobName": "Build and smoke-test Windows x64 portable app",
     "jobConclusion": "success",
-    "sourceCommit": "6c6d05113f6dcd2e8ba3cabb709377f05c888630",
+    "sourceCommit": "003ec096b275e0f726dec1c3541b85e2d89faed3",
     "runnerImage": "windows-latest",
     "architecture": "x64",
     "buildCommand": "npm run package:win",
@@ -51,26 +51,26 @@
     "artifactUploadStep": "success"
   },
   "deliverable": {
-    "artifactId": "11969134344",
-    "artifactName": "TriCoreBrowser-Windows-x64-M18-EXE-ba0280c89296c2c9ac8f75274f04554686c2759fe39e4418b06dbeddf2cc00af-BYTES-109797006-ZIP-BYTES-109729146-SHA256-044ae6f6fd17b386544e3d64718634143875b264c88d1172c67c03312e040cfc-NODE-v22.22.3-NPM-10.9.8",
-    "createdAt": "2026-10-15T11:52:19Z",
-    "expiresAt": "2026-11-14T11:52:13Z",
+    "artifactId": "11971305924",
+    "artifactName": "TriCoreBrowser-Windows-x64-M18-EXE-7b6a914c21d015b92a9a21434002370f19c841149fa47be0ceb8ef522f7e1ae8-BYTES-109778690-ZIP-BYTES-109710823-SHA256-4ed6c0c4c87a1f9fd8279ca0efe159348fa29f37dc229d2d9edc58f099b5804a-NODE-v22.22.3-NPM-10.9.8",
+    "createdAt": "2026-10-15T12:02:36Z",
+    "expiresAt": "2026-11-14T12:02:28Z",
     "retentionDays": 30,
-    "outerArtifactSizeBytes": 219482256,
-    "githubReportedOuterArtifactDigest": "sha256:8638ac90a48f0317d57e9fe13af83c42b5c307bb60965c32752cd7e377ef3752",
+    "outerArtifactSizeBytes": 219445598,
+    "githubReportedOuterArtifactDigest": "sha256:6b5e5d38d85b6cef0a807b4fb7fa6ad96e2929d8e7c0aeb2f19ce3472cf36a1e",
     "outerArtifactDigestLocallyVerified": false,
     "files": [
       {
         "name": "TriCoreBrowser.exe",
-        "sizeBytes": 109797006,
-        "buildTimeSha256": "ba0280c89296c2c9ac8f75274f04554686c2759fe39e4418b06dbeddf2cc00af",
+        "sizeBytes": 109778690,
+        "buildTimeSha256": "7b6a914c21d015b92a9a21434002370f19c841149fa47be0ceb8ef522f7e1ae8",
         "source": "Windows runner Get-FileHash; embedded in M18 artifact name and manifest",
         "localBytesDownloadedAndCompared": false
       },
       {
         "name": "TriCoreBrowser-Windows-x64-M18.zip",
-        "sizeBytes": 109729146,
-        "buildTimeSha256": "044ae6f6fd17b386544e3d64718634143875b264c88d1172c67c03312e040cfc",
+        "sizeBytes": 109710823,
+        "buildTimeSha256": "4ed6c0c4c87a1f9fd8279ca0efe159348fa29f37dc229d2d9edc58f099b5804a",
         "source": "Windows runner Get-FileHash; embedded in M18 artifact name and hash sidecar",
         "localBytesDownloadedAndCompared": false,
         "runnerArchiveCheck": "Expected ZIP entry list and embedded executable size checked after creation"
@@ -87,22 +87,29 @@
         "contents": "Build-time hashes and sizes for the EXE, convenience ZIP, and JSON manifest"
       }
     ],
-    "officialRunPage": "https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38729756733",
+    "officialRunPage": "https://github.com/shuvrajeetkamila/Tri-Core-Browser/actions/runs/38731179031",
     "directArtifactFileUrlProvided": false
+  },
+  "earlierSuccessfulWindowsBuild": {
+    "runId": "38729756733",
+    "sourceCommit": "6c6d05113f6dcd2e8ba3cabb709377f05c888630",
+    "artifactId": "11969134344",
+    "artifactOuterSizeBytes": 219482256,
+    "artifactOuterDigest": "sha256:8638ac90a48f0317d57e9fe13af83c42b5c307bb60965c32752cd7e377ef3752",
+    "exeSizeBytes": 109797006,
+    "exeBuildTimeSha256": "ba0280c89296c2c9ac8f75274f04554686c2759fe39e4418b06dbeddf2cc00af",
+    "zipSizeBytes": 109729146,
+    "zipBuildTimeSha256": "044ae6f6fd17b386544e3d64718634143875b264c88d1172c67c03312e040cfc",
+    "note": "Separate successful build; distinct commit/run. Different EXE hash does not establish a reproducibility result."
   },
   "separateArtifacts": {
     "packagedSmokeDiagnostics": {
-      "id": "11969049342",
+      "id": "11970461149",
       "name": "TriCoreBrowser-Packaged-Smoke-Diagnostics",
-      "sizeBytes": 735138,
-      "githubReportedDigest": "sha256:2585c512dae43e10b3cfda5aaf5835b2f83200f13ce48d09880cfdb23e106a4b",
-      "expiresAt": "2026-11-14T11:52:07Z",
+      "sizeBytes": 726693,
+      "githubReportedDigest": "sha256:456c8c34f6aec26f454d48af7daddc08a08ddda5f4354806241b05e1296d028d",
+      "expiresAt": "2026-11-14T12:02:21Z",
       "localBytesDownloaded": false
-    },
-    "preSmokeCandidate": {
-      "id": "11969319274",
-      "name": "TriCoreBrowser-Windows-x64-unverified-smoke-candidate",
-      "warning": "Uploaded before packaged smoke; do not use instead of the M18 post-validation artifact."
     },
     "isolatedD3D12Warp": {
       "runId": "38729756717",
@@ -156,7 +163,7 @@
     "draft": true,
     "baseBranch": "main",
     "headBranch": "arena/18bfbe1a-tri-core-browser",
-    "headShaAtM18Implementation": "6c6d05113f6dcd2e8ba3cabb709377f05c888630",
+    "headShaAtDocumentedBuild": "003ec096b275e0f726dec1c3541b85e2d89faed3",
     "mergedOrClosed": false
   }
 }
